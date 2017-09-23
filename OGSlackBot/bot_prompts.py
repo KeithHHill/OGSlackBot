@@ -31,7 +31,6 @@ def prompt_rules (user, channel):
 
     db.runSql("""update member_orientation set last_updated= now(), prompted_accept = 1, prompted_for_name = 0, prompted_for_club = 0 where member_id = %s""",[user])
 
-    print("user "+ record['member_name'] + " has been prompted for rules")
 
     message = "Hi, and welcome to the clan. We're a chill group of people but we like to be organized so we are going to go through some steps to get you settled."
     slack_client.api_call("chat.postMessage", channel=channel,
@@ -56,14 +55,11 @@ def prompt_username(user,channel):
     record = user_record[0]
 
     #name hasn't been confirmed but they are prompted
-    if record["name_correct"] == 0:
-        print("user "+ record['member_name'] + " has been prompted for name")
+    message = """To reduce confusion when clan members are trying to find you on xbox, your gamertag needs to be the same as your slack name. If there is a space in your gamertag, use an _ here.  As a bonus, you can put your real name as well with a - splitting them such as keith-diknak.  Does your name match your gamertag? (please respond 'yes' or 'no')"""
 
-        message = """To reduce confusion when clan members are trying to find you on xbox, your gamertag needs to be the same as your slack name. If there is a space in your gamertag, use an _ here.  As a bonus, you can put your real name as well with a - splitting them such as keith-diknak.  Does your name match your gamertag? (please respond 'yes' or 'no')"""
-
-        slack_client.api_call("chat.postMessage", channel=channel,
-                            text=message, as_user=True)
-        db.runSql("""update member_orientation set last_updated= now(), prompted_accept = 0, prompted_for_name = 1, prompted_for_club = 0 where member_id = %s""",[user])
+    slack_client.api_call("chat.postMessage", channel=channel,
+                        text=message, as_user=True)
+    db.runSql("""update member_orientation set last_updated= now(), prompted_accept = 0, prompted_for_name = 1, prompted_for_club = 0 where member_id = %s""",[user])
 
 
 # this function will ask the user if they are in the xbox club
@@ -73,11 +69,8 @@ def prompt_club(user,channel):
     """,[user])
     record = user_record[0]
 
-    if record["in_club"] == 0:
-        print("user "+ record['member_name'] + " has been prompted for club")
-
-        message = "While all of our communication is in slack, all members should be in the OG club too because we often organize groups that way. Are you currently in the Xbox Club for the clan? (please respond 'yes' or 'no')"
+    message = "While all of our communication is in slack, all members should be in the OG club too because we often organize groups that way. Are you currently in the Xbox Club for the clan? (please respond 'yes' or 'no')"
         
-        slack_client.api_call("chat.postMessage", channel=channel,
-                            text=message, as_user=True)
-        db.runSql("""update member_orientation set last_updated= now(), prompted_accept = 0, prompted_for_name = 0, prompted_for_club = 1 where member_id = %s""",[user])
+    slack_client.api_call("chat.postMessage", channel=channel,
+                        text=message, as_user=True)
+    db.runSql("""update member_orientation set last_updated= now(), prompted_accept = 0, prompted_for_name = 0, prompted_for_club = 1 where member_id = %s""",[user])
