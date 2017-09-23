@@ -2,7 +2,7 @@
 # Author: Keith Hill
 # Date: 9/12/2017
 #
-# 
+# https://api.slack.com/methods
 
 import os
 import time
@@ -23,9 +23,11 @@ try:
     BOT_ID = config.get('config','bot_id')
     bot_chat = config.get('config','bot_chat').lower()
     leader_chat = config.get('config','leader_chat')
+    log_chat = config.get('config','log_chat')
     general_chat = config.get('config','general_chat').lower()
     nag_hours = int(config.get('config','nag_hours'))
     test_mode = config.get('config','test_mode')
+
 
     print("config loaded \n")
 
@@ -37,6 +39,20 @@ EXAMPLE_COMMAND = "do"
 
 slack_client = SlackClient(token)
 
+def log_event(message) :
+    print(message)
+    slack_client.api_call("chat.postMessage", channel=log_chat,text=message, as_user=True)
+
+
+def update_name(user_id,current_name) :
+    call = "users.info?user="+user_id
+    response = slack_client.api_call(call)
+    slack_name = response['user']['name']
+    if response['user']['profile']['display_name'] != "" :
+        slack_name = response['user']['profile']['display_name']
+    if current_name != slack_name :
+        log_event("user "+current_name+" has changed their name in slack and is now known as "+slack_name)
+        db.runSql("update member_orientation set member_name =%s where member_id = %s",[slack_name,user_id])
 
 
 def evaluate_user(user) :
@@ -47,14 +63,18 @@ def evaluate_user(user) :
     
     # if rules are outstanding, prompt them
     if record["accepted"] == 0:
+        log_event("user "+ record['member_name'] + " has been prompted for rules")
+
         bot_prompts.prompt_rules(user,record["private_channel"])
 
     # if name is outstanding, prompt them
     elif record["accepted"] == 1 and record["name_correct"] == 0 :
+        log_event("user "+ record['member_name'] + " has been prompted for name")
         bot_prompts.prompt_username(user,record["private_channel"])
 
     # if club is outstanding, prompt them
     elif record["accepted"] == 1 and record["name_correct"] == 1 and record["in_club"] == 0 :
+        log_event("user "+ record['member_name'] + " has been prompted for club")
         bot_prompts.prompt_club(user,record["private_channel"])
 
 
@@ -108,7 +128,8 @@ def handle_yes_no(command, channel, user) :
         # is user accepting rules?
         if record["prompted_accept"] == 1 :
             if command == "yes" :
-                print("user "+ record['member_name'] + " accepted the rules")
+                log_event("user "+ record['member_name'] + " accepted the rules")
+                
 
                 message = "Awesome.  See, the rules weren't so tough."
                 db.runSql("""update member_orientation set last_updated= now(), prompted_accept = 0, accepted = 1, prompted_for_name = 0, prompted_for_club = 0 where member_id = %s
@@ -122,7 +143,7 @@ def handle_yes_no(command, channel, user) :
 
 
             else : #user declines
-                print("user "+ record['member_name'] + " declined the rules")
+                log_event("user "+ record['member_name'] + " declined the rules")
                 message = "Ouch...sorry there is an issue. The clan leaders have been notifed and will reach out to you soon.  Sit tight."
 
                 slack_client.api_call("chat.postMessage", channel=channel,
@@ -138,7 +159,7 @@ def handle_yes_no(command, channel, user) :
         elif record["prompted_for_name"] ==1 :
             if command == "yes":
                 message = "Great, another box checked.  Moving right along."
-                print("user "+ record['member_name'] + " accepted the name")
+                log_event("user "+ record['member_name'] + " accepted the name")
                 slack_client.api_call("chat.postMessage", channel=channel,
                             text=message, as_user=True)
 
@@ -148,7 +169,8 @@ def handle_yes_no(command, channel, user) :
                 evaluate_user(user)
 
             else: #user needs to correct the name
-                print("user "+ record['member_name'] + " needed help with the name")
+                log_event("user "+ record['member_name'] + " needed help with the name")
+
                 message ="""Not a problem, it's easy to change.  On desktop, click "Original Guardians" and click "Profile and Account".  From mobile, tap the ellipsis (...) and tap your name.  From there you can change it."""
                 slack_client.api_call("chat.postMessage", channel=channel,
                             text=message, as_user=True)
@@ -160,7 +182,7 @@ def handle_yes_no(command, channel, user) :
         # is user in the xbox club?
         elif record["prompted_for_club"] ==1 :
             if command == "yes":
-                print("user "+ record['member_name'] + " accepted the club")
+                log_event("user "+ record['member_name'] + " accepted the club")
                 message = "And we're done.  Thanks for joining the group and make sure you join all of the channels that interest you."
                 slack_client.api_call("chat.postMessage", channel=channel,
                             text=message, as_user=True)
@@ -169,7 +191,7 @@ def handle_yes_no(command, channel, user) :
                 """,[user])
 
             else :
-                print("user "+ record['member_name'] + " needs invited to the club")
+                log_event("user "+ record['member_name'] + " needs invited to the club")
                 message = "This is our last step for bringing you on board.  Please search for the Original Guardians club or ask a leader to send an invitation."
                 slack_client.api_call("chat.postMessage", channel=channel,
                             text=message, as_user=True)
@@ -224,18 +246,19 @@ def handle_command(command, channel, user):
         record = user_record[0]
         
         if record["prompted_for_name"]  == 1:
-            print("user "+ record['member_name'] + " accepted the name")
+            log_event("user "+ record['member_name'] + " accepted the name")
             response = "Great, another box checked.  Moving right along."
             db.runSql("""update member_orientation set last_updated= now(), name_correct = 1, prompted_for_name = 0 where member_id = %s
                 """,[user])
             
             slack_client.api_call("chat.postMessage", channel=channel,
                             text=response, as_user=True)
+            update_name(record['member_id'],record['member_name'])
             evaluate_user(user)
             deffered = True
 
         elif record["prompted_for_club"] == 1:
-            print("user "+ record['member_name'] + " accepted the club")
+            log_event("user "+ record['member_name'] + " accepted the club")
             message = "And we're done.  Thanks for joining the group and make sure you join all of the channels that interest you."
             slack_client.api_call("chat.postMessage", channel=channel,
                             text=message, as_user=True)
@@ -291,7 +314,7 @@ if __name__ == "__main__":
     READ_WEBSOCKET_DELAY = 1 # 1 second delay between reading from firehose 
     seconds = 0
     if slack_client.rtm_connect():
-        print("OG Bot connected and running!")
+        log_event("OG Bot connected and running!")
         while True:
             command, channel, user = parse_slack_output(slack_client.rtm_read())
             if command and channel:
@@ -302,7 +325,6 @@ if __name__ == "__main__":
 
 
             # we check for new users in the general chat
-
             if seconds % 60 == 0 :
                 call = "channels.info?channel="+str(general_chat).upper()
                 response = slack_client.api_call(call)
@@ -312,23 +334,34 @@ if __name__ == "__main__":
                 clan_members_string = ''.join(str(e) for e in clan_members)
 
                 for channel_member in channel_members :
+                    # find new user
                     if str(channel_member) not in clan_members_string : #complete hack but w/e
-                        print ("new user detected: " + channel_member)
+                        log_event("new user detected: " + channel_member)
                         new_user_detected(channel_member)
+
                 
 
             # perform check to nag people that stopped payting attention
             if seconds >= 3600:
                 seconds = 0
-                orientations = db.fetchAll("select * from member_orientation where last_updated < now() - interval %s hour and (accepted = 0 or name_correct = 0 or in_club = 0)", [nag_hours])                
+                orientations = db.fetchAll("select * from member_orientation where last_updated < now() - interval %s hour and (accepted = 0 or name_correct = 0 or in_club = 0)", [nag_hours])      
+                log_event("checking for people to nag")
                 for orientation in orientations:
+                    log_event(orientation['member_name']+" did not complete orientation and has been nagged")
                     slack_client.api_call("chat.postMessage", channel=orientation['private_channel'],
                             text="Sorry to bother, but we didn't get a chance to finish and my owner will delete me if I don't do my job.", as_user=True)
                     evaluate_user(orientation['member_id'])
 
+                
+                log_event("looking for name changes")
+                users = db.fetchAll("select * from member_orientation")
+                for user in users:
+                    update_name(user['member_id'],user['member_name'])
+                    
+
             time.sleep(READ_WEBSOCKET_DELAY)
     else:
-        print("Connection failed. Invalid Slack token or bot ID?")
+        log_event("Connection failed. Invalid Slack token or bot ID?")
 
 # use this to get your bot ID for the config file
 
