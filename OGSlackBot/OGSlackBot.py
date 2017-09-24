@@ -89,6 +89,8 @@ def new_user_detected(user):
     call = "users.info?user="+user
     user_info = slack_client.api_call(call)
 
+    slack_client.api_call("chat.postMessage", channel=str(general_chat).upper(),
+                            text="welcome to the clan "+user_info["user"]["name"]+". Please check your private messages to get some info about the group.", as_user=True)
  
     if test_mode == 'TRUE':
         db.runSql(""" replace into member_orientation
@@ -345,7 +347,7 @@ if __name__ == "__main__":
             if seconds >= 3600:
                 seconds = 0
                 orientations = db.fetchAll("select * from member_orientation where last_updated < now() - interval %s hour and (accepted = 0 or name_correct = 0 or in_club = 0)", [nag_hours])      
-                log_event("checking for people to nag")
+                # log_event("checking for people to nag")
                 for orientation in orientations:
                     log_event(orientation['member_name']+" did not complete orientation and has been nagged")
                     slack_client.api_call("chat.postMessage", channel=orientation['private_channel'],
@@ -353,7 +355,7 @@ if __name__ == "__main__":
                     evaluate_user(orientation['member_id'])
 
                 
-                log_event("looking for name changes")
+                # log_event("looking for name changes")
                 users = db.fetchAll("select * from member_orientation")
                 for user in users:
                     update_name(user['member_id'],user['member_name'])
