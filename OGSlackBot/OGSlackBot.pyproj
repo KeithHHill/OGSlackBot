@@ -25,6 +25,9 @@
     <Compile Include="bot_prompts.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="bot_utilities.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="database.py">
       <SubType>Code</SubType>
     </Compile>
