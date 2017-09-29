@@ -6,12 +6,14 @@
 
 import os
 import time
+import datetime
 import ConfigParser
 import sys
 from slackclient import SlackClient
 import database
 import bot_prompts
 import bot_utilities
+import og_events
 
 # get config
 myPath = os.path.dirname(os.path.abspath(__file__))
@@ -78,8 +80,10 @@ def new_user_detected(user):
     call = "users.info?user="+user
     user_info = slack_client.api_call(call)
 
+    user_name = bot_utilities.get_slack_name(user_info["user"]["id"])
+
     slack_client.api_call("chat.postMessage", channel=str(general_chat).upper(),
-                            text="welcome to the clan "+user_info["user"]["name"]+". Please check your private messages to get some info about the group.", as_user=True)
+                            text="welcome to the clan "+user_name+". Please check your private messages to get some info about the group.", as_user=True)
      
     db = database.Database()
 
@@ -87,7 +91,7 @@ def new_user_detected(user):
                     (member_id,member_name,last_updated,private_channel,date_started, date_completed, nag_count)
                     Values
                     (%s,%s,now(),%s,now(),null,0)
-    """,[user,user_info["user"]["name"],channel])
+    """,[user,user_name,channel])
     
     db.close()
 
@@ -203,72 +207,90 @@ def handle_yes_no(command, channel, user) :
 
 
 #handle the responses
-def handle_command(command, channel, user):
+def handle_command(command, channel, user,command_orig):
     """
         Receives commands directed at the bot and determines if they
         are valid commands. If so, then acts on the commands. If not,
         returns back what it needs for clarification.
     """
-    try :
-        db = database.Database()
-        response = "Sorry, I'm kind of a dumb robot.  I have no idea what you mean. Type 'help' to learn about me"
-        deffered = False
+    db = database.Database()
+    response = "Sorry, I'm kind of a dumb robot.  I have no idea what you mean. Type 'help' to learn about me"
+    deffered = False
     
-        if command.startswith('hi') or command.startswith('hello'):
-            response = "well hello there Guardian"
-        elif command.startswith('help') :
-            response = "My purpose is to help the clan stay organized and welcome new people to the group. I'll bug you if needed but otherwise I'll keep to myself."
+    if command.startswith('hi') or command.startswith('hello'):
+        response = "well hello there Guardian"
+    elif command.startswith('help') :
+        response = "My purpose is to help the clan stay organized and welcome new people to the group. I'll bug you if needed but otherwise I'll keep to myself."
     
-            # test the system
-        elif command.startswith("pretend i'm new") or command.startswith("pretend i am new"):
-            response ="Welcome guardian! I'm the OG Bot and I'm going to help you get started.  Check your private messages."
-            new_user_detected(user)
+        # test the system
+    elif command.startswith("pretend i'm new") or command.startswith("pretend i am new"):
+        response ="Welcome guardian! I'm the OG Bot and I'm going to help you get started.  Check your private messages."
+        new_user_detected(user)
     
+    #likely going through the orientation
+    elif command.startswith("yes") or command.startswith("no") :
+        handle_yes_no(command,channel,user)
+        deffered = True
+
+    elif command.startswith("create an event") or command.startswith("create event") :
+        og_events.create_new_event(command, channel, user)
+        deffered = True
+
+    elif "list" in command and ("events" in command or "games" in command):
+        og_events.list_upcoming_events(command,channel,user)
+        deffered = True
+
+    elif "join" in command and ("event" in command or "game" in command):
+        og_events.join_event(command,channel,user)
+        deffered = True
+
+    elif ("info" in command or "information" in command) and ("event" in command or "game" in command):
+        og_events.event_info(command,channel,user)
+        deffered = True
+
+    elif bot_utilities.actively_creating_event(user) == True :
+        og_events.handle_command(command, channel, user,command_orig)
+        deffered = True
+
     
-        #likely going through the orientation
-        elif command.startswith("yes") or command.startswith("no") :
-            handle_yes_no(command,channel,user)
+
+
+    #handle return commands from the user, such as orientation processses
+    elif command.startswith("done") :
+        user_record = db.fetchAll("""
+                        select * from member_orientation where member_id = %s
+                        """,[user])
+        record = user_record[0]
+        
+        if record["prompted_for_name"]  == 1:
+            bot_utilities.log_event("user "+ record['member_name'] + " accepted the name")
+            response = "Great, another box checked.  Moving right along."
+            db.runSql("""update member_orientation set last_updated= now(), name_correct = 1, prompted_for_name = 0 where member_id = %s
+                """,[user])
+            
+            slack_client.api_call("chat.postMessage", channel=channel,
+                            text=response, as_user=True)
+            bot_utilities.update_name(record['member_id'],record['member_name'])
+            evaluate_user(user)
+            deffered = True
+
+        elif record["prompted_for_club"] == 1:
+            bot_utilities.log_event("user "+ record['member_name'] + " accepted the club")
+            message = "And we're done.  Thanks for joining the group and make sure you join all of the channels that interest you."
+            slack_client.api_call("chat.postMessage", channel=channel,
+                            text=message, as_user=True)
+
+            db.runSql("""update member_orientation set last_updated= now(), in_club = 1, prompted_for_club = 0, date_completed = now() where member_id = %s
+                """,[user])
             deffered = True
 
 
-        #probably coming in from the name check process or the club check process
-        elif command.startswith("done") :
-            user_record = db.fetchAll("""
-                            select * from member_orientation where member_id = %s
-                            """,[user])
-            record = user_record[0]
+    if deffered == False :
+        slack_client.api_call("chat.postMessage", channel=channel,
+                            text=response, as_user=True)
+    db.close()
+
         
-            if record["prompted_for_name"]  == 1:
-                bot_utilities.log_event("user "+ record['member_name'] + " accepted the name")
-                response = "Great, another box checked.  Moving right along."
-                db.runSql("""update member_orientation set last_updated= now(), name_correct = 1, prompted_for_name = 0 where member_id = %s
-                    """,[user])
-            
-                slack_client.api_call("chat.postMessage", channel=channel,
-                                text=response, as_user=True)
-                bot_utilities.update_name(record['member_id'],record['member_name'])
-                evaluate_user(user)
-                deffered = True
-
-            elif record["prompted_for_club"] == 1:
-                bot_utilities.log_event("user "+ record['member_name'] + " accepted the club")
-                message = "And we're done.  Thanks for joining the group and make sure you join all of the channels that interest you."
-                slack_client.api_call("chat.postMessage", channel=channel,
-                                text=message, as_user=True)
-
-                db.runSql("""update member_orientation set last_updated= now(), in_club = 1, prompted_for_club = 0, date_completed = now() where member_id = %s
-                    """,[user])
-                deffered = True
-
-
-        if deffered == False :
-            slack_client.api_call("chat.postMessage", channel=channel,
-                                text=response, as_user=True)
-        db.close()
-
-    except:
-        bot_utilities.log_event("An unhandled error was encountered - handle_command")
-        bot_utilities.log_event(output['channel']+" " + output['user'])
 
 
 def parse_slack_output(slack_rtm_output):
@@ -292,7 +314,8 @@ def parse_slack_output(slack_rtm_output):
                     output['text'] = output['text'].replace(u"\u2019", '\'')
                     return output['text'].split(AT_BOT)[1].strip().lower(), \
                            output['channel'], \
-                           output['user']
+                           output['user'], \
+                           output['text'].split(AT_BOT)[1].strip()
             
                 #handle im conversations without needing @
                 elif output and 'text' in output and output['user'] != BOT_ID:
@@ -305,8 +328,9 @@ def parse_slack_output(slack_rtm_output):
                         if im["id"] == output['channel']:
                             return output['text'].lower(), \
                                    output['channel'], \
-                                   output['user']
-        return None, None, None
+                                   output['user'], \
+                                   output['text']
+        return None, None, None, None
 
     except :
         bot_utilities.log_event("An unhandled error was encountered - parse_slack_output")
@@ -319,9 +343,9 @@ if __name__ == "__main__":
     if slack_client.rtm_connect():
         bot_utilities.log_event("OG Bot connected and running!")
         while True:
-            command, channel, user = parse_slack_output(slack_client.rtm_read())
+            command, channel, user, command_orig = parse_slack_output(slack_client.rtm_read())
             if command and channel:
-                handle_command(command, channel, user)
+                handle_command(command, channel, user, command_orig)
             
             seconds += 1
 
