@@ -98,8 +98,9 @@ def update_event_time(command, channel, user, event_id) :
 def update_event_title(command, channel, user, event_id):
     response = "something went wrong update_event_title"
 
-    if command.__len__() > 25 :
-        response = "Title length must be 25 characters or less.  Please try again."
+    if command.__len__() > 25 or command.__len__() < 3 :
+        response = "Title length must be between 3 and 25 characters.  Please try again."
+        bot_utilities.log_event("user " + user + " provided an invalid event title: "+ command)
     else :
         db = database.Database()
         
@@ -151,8 +152,8 @@ def list_upcoming_events(command, channel, user) :
 
         response = response + "\n \njoin event: @og_bot join # \nmore info: @og_bot event info #"
     
-        slack_client.api_call("chat.postMessage", channel=channel,
-                                text=response, as_user=True)
+    slack_client.api_call("chat.postMessage", channel=channel,
+                            text=response, as_user=True)
     
 
 # lets users join events that have been created
@@ -193,10 +194,20 @@ def join_event(command, channel, user) :
             # if not in the event, add them
             if inEvent == False :
                 response = "Great, you have been added to event: " + records[0]['title'] + " to start at " + str(records[0]['start_date'].strftime("%I:%M %p")) + " EST on " + str(records[0]['start_date'].strftime("%A %m/%d"))
-                bot_utilities.log_event("user "+ user + " successfully joined event: " + value)
+                bot_utilities.log_event("user "+ user + " successfully joined event: " + str(value))
 
                 # add to database
                 db.runSql("insert into event_members (event_id,member_id,date_created) values (%s,%s,now())",[value,user])
+
+                # alert the event organizer - get the organizer
+                events = db.fetchAll("select * from events where event_id = %s",[value])
+                created_by_id = events[0]['created_by']
+
+                # I'll need the name for the person joining
+                results = db.fetchAll('select member_name from member_orientation where member_id = %s',[user])
+                member_name = results[0]['member_name']
+                
+                bot_utilities.send_private_message(created_by_id,member_name + " has joined your event: " + events[0]['title'])
 
             else :
                 response = "It looks like you are already in the event.  To see event information, type \"@og_bot event info " + str(value) + "\"."
@@ -211,56 +222,65 @@ def join_event(command, channel, user) :
 
 # return information regarding an event
 def event_info(command, channel, user) :
-    response = "something went wrong join_event"
-    # parse the number from the command
-    str_cmd = str(command)
-    value = 0
-    try :
-        value = int(''.join([c for c in str_cmd if c in '0123456789']))
-    except :
-        bot_utilities.log_event("user "+ user + " tried getting event info and provided invalid command: " + command)
+    # prase the response
+    event_id, response, event = bot_utilities.parse_event_from_command(user,command)
 
-    # check and see if the user provided a value at all
-    if value == 0 :
-        response = "You need to include the event ID in your request. To list available events, type @og_bot list events."
-
-    else :
+    if event_id != 0 : # valid event id was entered
+        bot_utilities.log_event("user "+ user + " successfully retreived event info for event "+ str(event_id))
         db = database.Database()
-        events = db.fetchAll("""
-                            select e.* , mo.member_name
-                            from events e
-                            inner join member_orientation mo on e.created_by = mo.member_id
-                            where e.start_date > now() and e.record_complete = 1 and e.event_id = %s
-                            """,[value])
-        
+        players = db.fetchAll("""
+                                select em.event_id, em.member_id, mo.member_name, em.date_created
+                                from event_members em
+                                inner join member_orientation mo on em.member_id = mo.member_id
+                                where em.event_id = %s
+                                order by em.date_created desc
+                                """,[event_id])
+        db.close()
+        response = event['title'] + "\n"+ \
+                    str(event['start_date'].strftime("%I:%M %p")) + " EST on " + str(event['start_date'].strftime("%A %m/%d")) + \
+                    "\n______\n"+event['descr']+"\nCreated by: " +event['created_name'] + "\n______\nPlayers (" + str(len(players))+"):\n"
 
-        if len(events) == 0 : # event is not in the future or id is invalid
-            response = "That's not a valid event ID in the future. Type \"@og_bot list events\" to see a list of valid events."
-            bot_utilities.log_event("user "+ user + " tried getting event info (not valid future event): " + command)
+        for player in players :
+            response = response + player['member_name'] + "\n"
 
-        else : 
-            bot_utilities.log_event("user "+ user + " successfully retreived event info for event "+ str(value))
-            players = db.fetchAll("""
-                                    select em.event_id, em.member_id, mo.member_name, em.date_created
-                                    from event_members em
-                                    inner join member_orientation mo on em.member_id = mo.member_id
-                                    where em.event_id = %s
-                                    order by em.date_created desc
-                                    """,[value])
-            event = events[0]
 
             
-            response = event['title'] + "\n"+ \
-                        str(event['start_date'].strftime("%I:%M %p")) + " EST on " + str(event['start_date'].strftime("%A %m/%d")) + \
-                        "\n______\n"+event['descr']+"\nCreated by: " +event['member_name'] + "\n______\nPlayers (" + str(len(players))+"):\n"
-
-            for player in players :
-                response = response + player['member_name'] + "\n"
-
-
-        db.close()
     slack_client.api_call("chat.postMessage", channel=channel,
                         text=response, as_user=True)
+
+
+def remove_from_event(command, channel, user):
+    response = "something went wrong"
+    #parse event from command
+    event_id, response, event_info = bot_utilities.parse_event_from_command(user,command)
+
+    if event_id != 0 : # ensures we have a valid event
+        # determine if the user is in the event
+        if bot_utilities.user_is_in_event(user,event_id) : # user is in the event
+            db = database.Database()
+            db.runSql("delete from event_members where event_id = %s and member_id = %s",[event_id,user])
+            
+            response = "You have been removed from event: " + event_info['title']
+            bot_utilities.log_event("User " + user + " has been removed from event "+ str(event_id))
+
+            # alert the event organizer - get the organizer
+            events = db.fetchAll("select * from events where event_id = %s",[event_id])
+            created_by_id = events[0]['created_by']
+
+            # I'll need the name for the person leaving
+            results = db.fetchAll('select member_name from member_orientation where member_id = %s',[user])
+            member_name = results[0]['member_name']
+            db.close()
+
+            bot_utilities.send_private_message(created_by_id,member_name + " has left your event: " + events[0]['title'])
+
+        else : #user was not in the event
+            response = "You weren't in the event..."
+            bot_utilities.log_event("User " + user + " attempted to remove from event and was not in it: " + command)
+
+    slack_client.api_call("chat.postMessage", channel=channel,
+                        text=response, as_user=True)
+
 
 
 # The user has been determined to be creating an event and has been passed here

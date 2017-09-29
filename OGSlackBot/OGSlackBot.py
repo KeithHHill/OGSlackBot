@@ -219,8 +219,24 @@ def handle_command(command, channel, user,command_orig):
     
     if command.startswith('hi') or command.startswith('hello'):
         response = "well hello there Guardian"
+
+    
+    elif command.startswith('help events') : 
+        response = """
+You can use the following commands:\n
+_______\n
+CREATE EVENT: creates a new event\n
+LIST EVENTS: lists upcoming events\n
+JOIN EVENT #: joins an indicated event\n
+EVENT INFO #: provides event details\n
+DELETE EVENT #: deletes an event you have created\n
+SHOW MY EVENTS: shows upcoming events you have joined
+                    """
+
+
     elif command.startswith('help') :
-        response = "My purpose is to help the clan stay organized and welcome new people to the group. I'll bug you if needed but otherwise I'll keep to myself."
+        response = "My purpose is to help the clan stay organized and welcome new people to the group..\n \n @og_bot help events : I'll tell you about my events feature"
+    
     
         # test the system
     elif command.startswith("pretend i'm new") or command.startswith("pretend i am new"):
@@ -247,6 +263,17 @@ def handle_command(command, channel, user,command_orig):
     elif ("info" in command or "information" in command) and ("event" in command or "game" in command):
         og_events.event_info(command,channel,user)
         deffered = True
+
+    elif ("remove" in command or "leave" in command) and ("event" in command or "game" in command):
+        og_events.remove_from_event(command,channel,user)
+        deffered = True
+
+
+    elif "delete" in command and ("event" in command or "game" in command):
+        response = "Sorry, I haven't learned how to do that yet.  Check back later."
+
+    elif "show my" in command and ("event" in command or "game" in command):
+        response = "Sorry, I haven't learned how to do that yet.  Check back later."
 
     elif bot_utilities.actively_creating_event(user) == True :
         og_events.handle_command(command, channel, user,command_orig)
