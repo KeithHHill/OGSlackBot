@@ -376,7 +376,7 @@ if __name__ == "__main__":
             
             seconds += 1
 
-            
+
 
             # we check for new users in the general chat
             if seconds % 60 == 0  and test_mode != "TRUE":

@@ -29,10 +29,46 @@ except:
 
 slack_client = SlackClient(token)
 
+
+# return information regarding an event
+def event_info(command, channel, user) :
+    # prase the response
+    event_id, response, event = bot_utilities.parse_event_from_command(user,command)
+
+    if event_id != 0 : # valid event id was entered
+        bot_utilities.log_event("user "+ user + " successfully retreived event info for event "+ str(event_id))
+        db = database.Database()
+        players = db.fetchAll("""
+                                select em.event_id, em.member_id, mo.member_name, em.date_created
+                                from event_members em
+                                inner join member_orientation mo on em.member_id = mo.member_id
+                                where em.event_id = %s
+                                order by em.date_created desc
+                                """,[event_id])
+        db.close()
+        response = event['title'] + "\n"+ \
+                    str(event['start_date'].strftime("%I:%M %p")) + " EST on " + str(event['start_date'].strftime("%A %m/%d")) + \
+                    "\n______\n"+event['descr']+"\nCreated by: " +event['created_name'] + "\n______\nPlayers (" + str(len(players))+"):\n"
+
+        for player in players :
+            response = response + player['member_name'] + "\n"
+
+
+            
+    slack_client.api_call("chat.postMessage", channel=channel,
+                        text=response, as_user=True)
+
+
 # creating a new event record
 def create_new_event (command, channel, user):
     db = database.Database()
     
+    # only save origin channel if it wasn't in an IM
+    if bot_utilities.is_private_conversation(channel):
+        origin_channel = None
+    else :
+        origin_channel = channel
+
     # we need the member name
     members = db.fetchAll("select * from member_orientation where member_id = %s",[user])
     member = members[0]
@@ -45,7 +81,7 @@ def create_new_event (command, channel, user):
 					Values
 					(now(),%s,%s,"start")
                     """
-                    ,[user,channel])
+                    ,[user,origin_channel])
     
     # get event ID
     events = db.fetchAll("select * from events where created_by = %s and record_complete = 0 order by created_date desc limit 1",[user])
@@ -126,12 +162,85 @@ def update_event_descr(command, channel, user, event_id):
         
         #update the db and get ready for the next prompt
         db.runSql("update events set descr = %s, current_prompt = null, record_complete = 1 where event_id = %s",[command,event_id])
-        db.close()
-        response = "Great. Your event description has been updated. Your event ID is " + str(event_id) + ". Others can join it by typing @og_bot join "+ str(event_id)
+        response = "Great. Your event description has been updated. Your event ID is " + str(event_id) + ". Others can join it by typing @og_bot join event "+ str(event_id)
         bot_utilities.log_event("Event: " + str(event_id) + " description updated: " + str(command))
+
+        events = db.fetchAll("select * from events where event_id = %s",[event_id])
+        event = events[0]
+
+        if event['origin_channel'] is None :
+            db.runSql("update events set current_prompt = \"channel\", record_complete = 0 where event_id = %s",[event_id])
+            response = "Almost done. If you would like to assign this to a specific channel please use # and link the channel. Otherwise, just respond 'done'"
+
+        else : # event is done. auto join event
+            db.runSql("insert into event_members (event_id,member_id,date_created) values(%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[event_id,user])
+
+        db.close()
 
     slack_client.api_call("chat.postMessage", channel=channel,
                             text=response, as_user=True)
+
+
+
+# Assign a channel from the user's input
+def assign_event_channel(command, channel, user, event_id) :
+    response = "something went wrong"
+    db = database.Database()
+
+    if command == "done" : 
+        response = "Great. Your event is created. Your event ID is " + str(event_id) + ". Others can join it by typing @og_bot join event "+ str(event_id)
+        bot_utilities.log_event("user " + user + " decided not to assign a channel to event " + str(event_id))
+        db.runSql("update events set record_complete = 1, current_prompt = null where event_id = %s",[event_id])
+        db.runSql("insert into event_members (event_id,member_id,date_created) values(%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[event_id,user])
+
+    else :
+        # strip channel
+        stripped_channel = ""
+        counter = 2
+        while counter < len(str(command)) :
+            if command[counter] == "|" :
+                break
+            else :
+                stripped_channel = stripped_channel + command[counter]
+            counter += 1
+
+        stripped_channel = str(stripped_channel.upper())
+
+
+        # check if valid channel
+        channel_info = slack_client.api_call("conversations.info?channel=" + stripped_channel)
+        if channel_info['ok'] == False :
+            response = "Sorry, that doesn't look like a valid channel to me.  Please try again."
+            bot_utilities.log_event("user " + user + " attempted to link a channel to an event and provited an invalid channel: "+ command)
+        
+        else : # it is valid - update the database
+            # update the database
+            response = "Great. Your event description has been updated. Your event ID is " + str(event_id) + ". Others can join it by typing @og_bot join event "+ str(event_id)
+            bot_utilities.log_event("user " + user + " added a channel to event " + str(event_id))
+            db.runSql("update events set origin_channel = %s, current_prompt = null, record_complete = 1 where event_id = %s",[stripped_channel,event_id])
+            
+            # auto add user to event
+            db.runSql("insert into event_members (event_id,member_id,date_created) values(%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[event_id,user])
+    
+            #blast the channel
+            events = db.fetchAll("""
+                                select e.*, mo.member_name
+                                from events e
+                                inner join member_orientation mo on e.created_by = mo.member_id
+                                where e.event_id = %s
+                                """,[event_id])
+            event = events[0]
+            blast_message = event['member_name'] + " has scheduled a new event! "
+            slack_client.api_call("chat.postMessage", channel=stripped_channel,
+                            text=blast_message, as_user=True)
+            event_info("event info " + str(event_id),stripped_channel,user)
+
+    
+    slack_client.api_call("chat.postMessage", channel=channel,
+                            text=response, as_user=True)
+    db.close()
+
+
 
 
 # Query all events in the future
@@ -197,7 +306,7 @@ def join_event(command, channel, user) :
                 bot_utilities.log_event("user "+ user + " successfully joined event: " + str(value))
 
                 # add to database
-                db.runSql("insert into event_members (event_id,member_id,date_created) values (%s,%s,now())",[value,user])
+                db.runSql("insert into event_members (event_id,member_id,date_created) values (%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[value,user])
 
                 # alert the event organizer - get the organizer
                 events = db.fetchAll("select * from events where event_id = %s",[value])
@@ -220,35 +329,7 @@ def join_event(command, channel, user) :
 
 
 
-# return information regarding an event
-def event_info(command, channel, user) :
-    # prase the response
-    event_id, response, event = bot_utilities.parse_event_from_command(user,command)
-
-    if event_id != 0 : # valid event id was entered
-        bot_utilities.log_event("user "+ user + " successfully retreived event info for event "+ str(event_id))
-        db = database.Database()
-        players = db.fetchAll("""
-                                select em.event_id, em.member_id, mo.member_name, em.date_created
-                                from event_members em
-                                inner join member_orientation mo on em.member_id = mo.member_id
-                                where em.event_id = %s
-                                order by em.date_created desc
-                                """,[event_id])
-        db.close()
-        response = event['title'] + "\n"+ \
-                    str(event['start_date'].strftime("%I:%M %p")) + " EST on " + str(event['start_date'].strftime("%A %m/%d")) + \
-                    "\n______\n"+event['descr']+"\nCreated by: " +event['created_name'] + "\n______\nPlayers (" + str(len(players))+"):\n"
-
-        for player in players :
-            response = response + player['member_name'] + "\n"
-
-
-            
-    slack_client.api_call("chat.postMessage", channel=channel,
-                        text=response, as_user=True)
-
-
+# lets people remove themself from an event
 def remove_from_event(command, channel, user):
     response = "something went wrong"
     #parse event from command
@@ -282,6 +363,10 @@ def remove_from_event(command, channel, user):
                         text=response, as_user=True)
 
 
+def update_time_on_event(command, channel, user, event_id) :
+    db = database.Database()
+
+    db.close()
 
 # The user has been determined to be creating an event and has been passed here
 def handle_command(command, channel, user, command_orig):
@@ -305,6 +390,10 @@ def handle_command(command, channel, user, command_orig):
 
     elif event['current_prompt'] == "descr" :
         update_event_descr(str(command_orig),channel,user,event['event_id'])
+        deffered = True
+
+    elif event['current_prompt'] == "channel" :
+        assign_event_channel(command,channel,user,event['event_id'])
         deffered = True
 
     db.close()
