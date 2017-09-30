@@ -149,7 +149,7 @@ def handle_yes_no(command, channel, user) :
                 slack_client.api_call("chat.postMessage", channel=leader_chat,
                             text="Notice: User "+ user_info["user"]["name"] +" is going through orientation and has declined the rules.  Please reach out.", as_user=True)
         
-        # is the user accepting the name?
+        # is the user accepting the name? 
         elif record["prompted_for_name"] ==1 :
             if command == "yes":
                 message = "Great, another box checked.  Moving right along."
@@ -376,7 +376,7 @@ if __name__ == "__main__":
             
             seconds += 1
 
-            
+
 
             # we check for new users in the general chat
             if seconds % 60 == 0  and test_mode != "TRUE":

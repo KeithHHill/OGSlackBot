@@ -22,6 +22,7 @@ try:
     nag_hours = int(config.get('config','nag_hours'))
     test_mode = config.get('config','test_mode')
     timeout_min = config.get('events','timeout_min')
+    reminder_min = config.get('events','reminder_min')
 
 
 except:
@@ -41,6 +42,13 @@ def send_private_message(user, message) :
 
     slack_client.api_call("chat.postMessage", channel=response['channel']['id'], text=message, as_user=True)
 
+
+def is_private_conversation(channel):
+    response = slack_client.api_call("conversations.info?channel="+channel)
+    if response['channel']['is_im'] == False:
+        return False
+    else :
+        return True
 
 def get_slack_name(user_id) :
     call = "users.info?user="+user_id
@@ -78,6 +86,7 @@ def orientation_completed(user_id) :
         result = False
 
     return result
+
 
 # tries to parse an event ID from a user input.  Returns 0 if the event is not valid
 def parse_event_from_command(user, command) : 
@@ -129,6 +138,9 @@ def user_is_in_event(user, event_id):
 
     db.close()
 
+
+
+
 # determine if the user is actively going through the event creation process.
 def actively_creating_event (user_id):
     result = True
@@ -139,3 +151,41 @@ def actively_creating_event (user_id):
         result = False
     return result
 
+
+# scheduled job to check for people to remind for events
+def event_reminders():
+    db = database.Database()
+    
+    #get list of people to remind. Must be in the future, haven't been reminded yet, and within the reminder threshhold
+    members = db.fetchAll("""
+                            select em.*, e.event_id, e.title, e.start_date
+                            from event_members em
+                            inner join events e on e.event_id = em.event_id
+                            where reminder_sent = 0 and e.start_date - interval %s minute < now() and e.start_date > now()
+                            """,[reminder_min])
+    
+    for member in members: 
+        t = member['start_date'] - datetime.datetime.now()
+        min_to_start = str(divmod(t.days * 86400 + t.seconds, 60)[0])
+        send_private_message(member['member_id'],"Your upcoming event ("+ member['title']+") is scheduled to start in "+ min_to_start + " minutes. \nFor more info on the event, type @og_bot event info "+ str(member['event_id']))
+
+        log_event(member['member_id'] + " was reminded of upcoming event " + str(member['event_id']))
+
+    
+    #update the db to indicate they have been reminded
+    db.runSql("""
+                update event_members em
+                inner join events e on e.event_id = em.event_id
+                set em.reminder_sent = 1
+                where reminder_sent = 0 and e.start_date - interval %s minute < now() and e.start_date > now()
+                """,[reminder_min])
+    db.close()
+
+
+
+if __name__ == "__main__":
+    arguments = sys.argv[1:]
+
+    if arguments[0] == "event_reminders" :
+        event_reminders()
+   
