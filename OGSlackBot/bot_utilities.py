@@ -31,8 +31,11 @@ except:
 slack_client = SlackClient(token)
 
 def log_event(message) :
-    print(message)
-    slack_client.api_call("chat.postMessage", channel=log_chat,text=message, as_user=True)
+    try :
+        print(message)
+        slack_client.api_call("chat.postMessage", channel=log_chat,text=message, as_user=True)
+    except :
+        print("error logging")
 
 
 def send_private_message(user, message) :
@@ -88,7 +91,7 @@ def orientation_completed(user_id) :
     return result
 
 
-# tries to parse an event ID from a user input.  Returns 0 if the event is not valid
+# tries to parse an event ID from a user input.  Returns 0 if the event is not valid. Returns -1 if the event was deleted
 def parse_event_from_command(user, command) : 
     event_id = 0
     response = "something went wrong join_event"
@@ -121,6 +124,11 @@ def parse_event_from_command(user, command) :
             
             return event_id, response, None
 
+        if records[0]['deleted'] is not None: # valid but deleted
+            event_id = -1
+            response = "That event has been deleted."
+            return event_id, response, records[0]
+
         else :
             return event_id, response, records[0]
 
@@ -145,7 +153,7 @@ def user_is_in_event(user, event_id):
 def actively_creating_event (user_id):
     result = True
     db = database.Database()
-    events = db.fetchAll("select * from events where created_date > now() - interval %s minute and record_complete = 0 and created_by = %s",[timeout_min,user_id])
+    events = db.fetchAll("select * from events where created_date > now() - interval %s minute and record_complete = 0 and created_by = %s and deleted is null",[timeout_min,user_id])
     db.close()
     if len(events) == 0 :
         result = False
@@ -161,7 +169,7 @@ def event_reminders():
                             select em.*, e.event_id, e.title, e.start_date
                             from event_members em
                             inner join events e on e.event_id = em.event_id
-                            where reminder_sent = 0 and e.start_date - interval %s minute < now() and e.start_date > now()
+                            where reminder_sent = 0 and e.start_date - interval %s minute < now() and e.start_date > now() and e.deleted is null
                             """,[reminder_min])
     
     for member in members: 
@@ -177,7 +185,7 @@ def event_reminders():
                 update event_members em
                 inner join events e on e.event_id = em.event_id
                 set em.reminder_sent = 1
-                where reminder_sent = 0 and e.start_date - interval %s minute < now() and e.start_date > now()
+                where reminder_sent = 0 and e.start_date - interval %s minute < now() and e.start_date > now() and e.deleted is null
                 """,[reminder_min])
     db.close()
 

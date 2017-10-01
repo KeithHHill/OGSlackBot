@@ -15,6 +15,7 @@ import bot_prompts
 import bot_utilities
 import og_events
 
+
 # get config
 myPath = os.path.dirname(os.path.abspath(__file__))
 
@@ -256,7 +257,7 @@ SHOW MY EVENTS: shows upcoming events you have joined
         og_events.list_upcoming_events(command,channel,user)
         deffered = True
 
-    elif "join" in command and ("event" in command or "game" in command):
+    elif ("join" in command and ("event" in command or "game" in command)) or command.startswith("join"):
         og_events.join_event(command,channel,user)
         deffered = True
 
@@ -270,7 +271,8 @@ SHOW MY EVENTS: shows upcoming events you have joined
 
 
     elif "delete" in command and ("event" in command or "game" in command):
-        response = "Sorry, I haven't learned how to do that yet.  Check back later."
+        og_events.delete_event(command,channel,user)
+        deffered = True
 
     elif "show my" in command and ("event" in command or "game" in command):
         response = "Sorry, I haven't learned how to do that yet.  Check back later."
@@ -377,7 +379,6 @@ if __name__ == "__main__":
             seconds += 1
 
 
-
             # we check for new users in the general chat
             if seconds % 60 == 0  and test_mode != "TRUE":
                 db = database.Database()
@@ -390,7 +391,7 @@ if __name__ == "__main__":
 
                 for channel_member in channel_members :
                     # find new user
-                    if str(channel_member) not in clan_members_string : #complete hack but w/e
+                    if str(channel_member) not in clan_members_string and str(channel_member) != BOT_ID: #complete hack but w/e
                         bot_utilities.log_event("new user detected: " + channel_member)
                         new_user_detected(channel_member)
                 db.close()
