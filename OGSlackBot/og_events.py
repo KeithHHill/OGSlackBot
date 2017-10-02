@@ -35,7 +35,7 @@ def event_info(command, channel, user) :
     # prase the response
     event_id, response, event = bot_utilities.parse_event_from_command(user,command)
 
-    if event_id != 0 : # valid event id was entered
+    if event_id > 0 : # valid event id was entered
         bot_utilities.log_event("user "+ user + " successfully retreived event info for event "+ str(event_id))
         db = database.Database()
         players = db.fetchAll("""
@@ -53,7 +53,7 @@ def event_info(command, channel, user) :
         for player in players :
             response = response + player['member_name'] + "\n"
 
-
+        response = response + "\nTo join, type @og_bot join event " + str(event_id)
             
     slack_client.api_call("chat.postMessage", channel=channel,
                         text=response, as_user=True)
@@ -227,7 +227,7 @@ def assign_event_channel(command, channel, user, event_id) :
                                 select e.*, mo.member_name
                                 from events e
                                 inner join member_orientation mo on e.created_by = mo.member_id
-                                where e.event_id = %s
+                                where e.event_id = %s and e.deleted is null
                                 """,[event_id])
             event = events[0]
             blast_message = event['member_name'] + " has scheduled a new event! "
@@ -246,7 +246,7 @@ def assign_event_channel(command, channel, user, event_id) :
 # Query all events in the future
 def list_upcoming_events(command, channel, user) :
     db = database.Database()
-    events = db.fetchAll("select * from events where record_complete = 1 and start_date > now()")
+    events = db.fetchAll("select * from events where record_complete = 1 and start_date > now() and deleted is null")
     db.close()
 
     if len(events) == 0 :
@@ -268,25 +268,17 @@ def list_upcoming_events(command, channel, user) :
 # lets users join events that have been created
 def join_event(command, channel, user) :
     response = "something went wrong join_event"
-    # parse the number from the command
-    str_cmd = str(command)
-    value = 0
-    try :
-        value = int(''.join([c for c in str_cmd if c in '0123456789']))
-    except :
-        bot_utilities.log_event("user "+ user + " tried joining event and provided invalid command: " + command)
 
-    # check and see if the user provided a value at all
-    if value == 0 :
-        response = "You need to include the event ID in your request. To list available events, type @og_bot list events."
+    event_id, response, event = bot_utilities.parse_event_from_command(user,command)
 
-    else :
+    
+    if event_id > 0 :
         db = database.Database()
         records = db.fetchAll("""select e.event_id, e.title, e.start_date, em.member_id
                                 from events e 
                                 left outer join event_members em on e.event_id = em.event_id
-                                where e.record_complete = 1 and e.start_date > now() and e.event_id = %s
-                            """,[value])
+                                where e.record_complete = 1 and e.start_date > now() and e.event_id = %s and e.deleted is null
+                            """,[event_id])
 
         # ensure the selected event is valid and in the future
         if len(records) == 0 :
@@ -303,13 +295,13 @@ def join_event(command, channel, user) :
             # if not in the event, add them
             if inEvent == False :
                 response = "Great, you have been added to event: " + records[0]['title'] + " to start at " + str(records[0]['start_date'].strftime("%I:%M %p")) + " EST on " + str(records[0]['start_date'].strftime("%A %m/%d"))
-                bot_utilities.log_event("user "+ user + " successfully joined event: " + str(value))
+                bot_utilities.log_event("user "+ user + " successfully joined event: " + str(event_id))
 
                 # add to database
-                db.runSql("insert into event_members (event_id,member_id,date_created) values (%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[value,user])
+                db.runSql("insert into event_members (event_id,member_id,date_created) values (%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[event_id,user])
 
                 # alert the event organizer - get the organizer
-                events = db.fetchAll("select * from events where event_id = %s",[value])
+                events = db.fetchAll("select * from events where event_id = %s",[event_id])
                 created_by_id = events[0]['created_by']
 
                 # I'll need the name for the person joining
@@ -319,7 +311,7 @@ def join_event(command, channel, user) :
                 bot_utilities.send_private_message(created_by_id,member_name + " has joined your event: " + events[0]['title'])
 
             else :
-                response = "It looks like you are already in the event.  To see event information, type \"@og_bot event info " + str(value) + "\"."
+                response = "It looks like you are already in the event.  To see event information, type \"@og_bot event info " + str(event_id) + "\"."
                 bot_utilities.log_event("user "+ user + " tried joining event but was already a member: " + command)
 
         db.close()
@@ -335,7 +327,7 @@ def remove_from_event(command, channel, user):
     #parse event from command
     event_id, response, event_info = bot_utilities.parse_event_from_command(user,command)
 
-    if event_id != 0 : # ensures we have a valid event
+    if event_id > 0 : # ensures we have a valid event
         # determine if the user is in the event
         if bot_utilities.user_is_in_event(user,event_id) : # user is in the event
             db = database.Database()
@@ -363,10 +355,90 @@ def remove_from_event(command, channel, user):
                         text=response, as_user=True)
 
 
-def update_time_on_event(command, channel, user, event_id) :
-    db = database.Database()
 
+# lets a user delete and event they created
+def delete_event(command,channel, user) :
+    event_id, response, records = bot_utilities.parse_event_from_command(user,command)
+
+
+    if event_id > 0 : # valid event
+        db = database.Database()
+        records = db.fetchAll("""
+                            select e.*, em.member_id as event_member
+                            from events e
+                            left outer join event_members em on e.event_id = em.event_id
+                            where record_complete = 1 and deleted is null and e.event_id = %s
+                            """,[event_id])
+
+        # make sure user created the event
+        if records[0]['created_by'] != user :
+            response = "You did not create that event so you cannot delete it."
+            bot_utilities.log_event("User "+ user + " attempted to delete an event but was not the creator: " + command)
+
+        else : # proceed to delete
+            db.runSql("update events set deleted = now() where event_id = %s",[event_id])
+            response = "Event "+ str(event_id) + " has been deleted"
+            bot_utilities.log_event = "User " + user + " deleted event " + str(event_id)
+
+            # send notifications to event members
+            for record in records :
+                if record['event_member'] != user : # no need to send a PM to the person deleting it
+                    bot_utilities.send_private_message(record['event_member'],"An upcoming event ("+ record['title']+") has been canceled.")
+
+
+        db.close()
+    
+    slack_client.api_call("chat.postMessage", channel=channel, text=response, as_user=True)
+
+
+
+
+# lets a user update a time for an event they have created
+def update_time_on_event(command, channel, user) :
+    db = database.Database()
+    issolated_time = ""
+    success = False
+    event_id = 0
+
+    # try and get a time
+    try:
+        issolated_time = command.split(": ",1)[1]
+        parsed_time = parser.parse(issolated_time)
+        event_id, response, event = bot_utilities.parse_event_from_command(user,command.split(": ",1)[0])
+        if event_id > 0 :
+            success = True
+    except:
+        response = "I was unable to find the time in that command. Your command should like this:\n og_bot update event time 99: 4/25/2020 9:00 PM"
+        bot_utilities.log_event(user + " Failed to split time:" + command)
+
+    # happy path. Should have valid event and tiome
+    if success == True:
+        # check if the person created the event
+        if event['created_by'] != user :
+            response = "You did not create the event so you cannot change the time."
+            bot_utilities.log_event("User "+ user + " attempted to change an event time but did not create it: " + command)
+
+        else :
+            # update the time
+            db.runSql("update events set start_date = %s where event_id = %s",[parsed_time,event_id])
+
+            # send a pm to all members
+            members = db.fetchAll("select * from event_members where event_id = %s",[event_id])
+            for member in members:
+                if member['member_id'] != user : # no need to pm creator
+                    bot_utilities.send_private_message(member['member_id'],"The time for an upcoming event ("+event['title']+") has been changed to "+ str(parsed_time.strftime("%a %m/%d %H:%M"))\
+                        +"\n\nIf you can't make this new time, you can leave the event by typing: leave event "+ str(event['event_id']))
+            
+            
+            response = "Great, the event time has been updated to " + str(parsed_time.strftime("%a %m/%d %H:%M"))
+            bot_utilities.log_event("User "+ user + " updated the time for an event: " + command)
+
+
+    slack_client.api_call("chat.postMessage", channel=channel, text=response, as_user=True)
     db.close()
+
+
+
 
 # The user has been determined to be creating an event and has been passed here
 def handle_command(command, channel, user, command_orig):
