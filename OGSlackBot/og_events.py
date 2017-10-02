@@ -393,9 +393,48 @@ def delete_event(command,channel, user) :
 
 
 
-def update_time_on_event(command, channel, user, event_id) :
+# lets a user update a time for an event they have created
+def update_time_on_event(command, channel, user) :
     db = database.Database()
+    issolated_time = ""
+    success = False
+    event_id = 0
 
+    # try and get a time
+    try:
+        issolated_time = command.split(": ",1)[1]
+        parsed_time = parser.parse(issolated_time)
+        event_id, response, event = bot_utilities.parse_event_from_command(user,command.split(": ",1)[0])
+        if event_id > 0 :
+            success = True
+    except:
+        response = "I was unable to find the time in that command. Your command should like this:\n og_bot update event time 99: 4/25/2020 9:00 PM"
+        bot_utilities.log_event(user + " Failed to split time:" + command)
+
+    # happy path. Should have valid event and tiome
+    if success == True:
+        # check if the person created the event
+        if event['created_by'] != user :
+            response = "You did not create the event so you cannot change the time."
+            bot_utilities.log_event("User "+ user + " attempted to change an event time but did not create it: " + command)
+
+        else :
+            # update the time
+            db.runSql("update events set start_date = %s where event_id = %s",[parsed_time,event_id])
+
+            # send a pm to all members
+            members = db.fetchAll("select * from event_members where event_id = %s",[event_id])
+            for member in members:
+                if member['member_id'] != user : # no need to pm creator
+                    bot_utilities.send_private_message(member['member_id'],"The time for an upcoming event ("+event['title']+") has been changed to "+ str(parsed_time.strftime("%a %m/%d %H:%M"))\
+                        +"\n\nIf you can't make this new time, you can leave the event by typing: leave event "+ str(event['event_id']))
+            
+            
+            response = "Great, the event time has been updated to " + str(parsed_time.strftime("%a %m/%d %H:%M"))
+            bot_utilities.log_event("User "+ user + " updated the time for an event: " + command)
+
+
+    slack_client.api_call("chat.postMessage", channel=channel, text=response, as_user=True)
     db.close()
 
 

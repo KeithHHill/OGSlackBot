@@ -72,8 +72,12 @@ def update_name(user_id,current_name) :
     if response['user']['profile']['display_name'] != "" :
         slack_name = response['user']['profile']['display_name']
     if current_name != slack_name :
-        log_event("user "+current_name+" has changed their name in slack and is now known as "+slack_name)
+        # alert general chat as well as the log
+        message = "user "+current_name+" has changed their name in slack and is now known as "+slack_name
+        log_event(message)
         db.runSql("update member_orientation set member_name =%s where member_id = %s",[slack_name,user_id])
+        slack_client.api_call("chat.postMessage", channel=general_chat.upper(), 
+                              text=message, as_user=True)
 
     db.close()
 
@@ -160,6 +164,7 @@ def actively_creating_event (user_id):
     return result
 
 
+
 # scheduled job to check for people to remind for events
 def event_reminders():
     db = database.Database()
@@ -196,4 +201,5 @@ if __name__ == "__main__":
 
     if arguments[0] == "event_reminders" :
         event_reminders()
+        
    

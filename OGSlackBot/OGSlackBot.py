@@ -231,7 +231,8 @@ LIST EVENTS: lists upcoming events\n
 JOIN EVENT #: joins an indicated event\n
 EVENT INFO #: provides event details\n
 DELETE EVENT #: deletes an event you have created\n
-SHOW MY EVENTS: shows upcoming events you have joined
+SHOW MY EVENTS: shows upcoming events you have joined\n
+UPDATE EVENT TIME: Lets you update a time for an event
                     """
 
 
@@ -276,6 +277,11 @@ SHOW MY EVENTS: shows upcoming events you have joined
 
     elif "show my" in command and ("event" in command or "game" in command):
         response = "Sorry, I haven't learned how to do that yet.  Check back later."
+
+
+    elif command.startswith("update event time"):
+        og_events.update_time_on_event(command,channel,user)
+        deffered = True
 
     elif bot_utilities.actively_creating_event(user) == True :
         og_events.handle_command(command, channel, user,command_orig)
@@ -410,8 +416,7 @@ if __name__ == "__main__":
                     evaluate_user(orientation['member_id'])
                     db.runSql("update member_orientation set nag_count = nag_count + 1 where member_id = %s",[orientation['member_id']])
 
-                
-                # bot_utilities.log_event("looking for name changes")
+                # check for name changes
                 users = db.fetchAll("select * from member_orientation")
                 for user in users:
                     bot_utilities.update_name(user['member_id'],user['member_name'])
