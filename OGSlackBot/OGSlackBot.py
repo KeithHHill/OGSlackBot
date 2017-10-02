@@ -31,6 +31,7 @@ try:
     general_chat = config.get('config','general_chat').lower()
     nag_hours = int(config.get('config','nag_hours'))
     test_mode = config.get('config','test_mode')
+    admin_user = config.get('config','admin')
 
 
     print("config loaded \n")
@@ -278,6 +279,11 @@ UPDATE EVENT TIME: Lets you update a time for an event
     elif "show my" in command and ("event" in command or "game" in command):
         response = "Sorry, I haven't learned how to do that yet.  Check back later."
 
+
+    elif command.startswith("go kill yourself") and user == admin_user :
+        bot_utilities.log_event("self destruct activated")
+        slack_client.api_call("chat.postMessage", channel=channel, text="wow, that's rude", as_user=True)
+        sys.exit()
 
     elif command.startswith("update event time"):
         og_events.update_time_on_event(command,channel,user)
