@@ -43,7 +43,7 @@ def event_info(command, channel, user) :
                                 from event_members em
                                 inner join member_orientation mo on em.member_id = mo.member_id
                                 where em.event_id = %s
-                                order by em.date_created desc
+                                order by em.date_created asc
                                 """,[event_id])
         db.close()
         response = event['title'] + "\n"+ \

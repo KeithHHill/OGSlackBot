@@ -347,9 +347,14 @@ def parse_slack_output(slack_rtm_output):
                 #print ("\n")
                 #print(output)
                 #print ("\n")
-                        
+
+                try : # ensure the message has a user and text
+                    text = output['text']
+                    user = output['user']
+                except:
+                    return None,None,None,None
             
-            
+
                 if output and 'text' in output and AT_BOT in output['text']:
                     # return text after the @ mention, whitespace removed
                     output['text'] = output['text'].replace(u"\u2019", '\'')
@@ -373,9 +378,14 @@ def parse_slack_output(slack_rtm_output):
                                    output['text']
         return None, None, None, None
 
-    except :
+    except : # nested tries to prevent the bot from crashing
         bot_utilities.log_event("An unhandled error was encountered - parse_slack_output")
-        bot_utilities.log_event(output['channel']+" " + output['user'])
+        try: 
+            bot_utilities.log_event(output['channel']+" " + output['user'])
+            return None, None, None, None
+        except :
+            bot_utilities.log_event("failed to log the unhandled error")
+            return None, None, None, None
 
 
 if __name__ == "__main__":
