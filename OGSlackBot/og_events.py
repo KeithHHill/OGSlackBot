@@ -22,6 +22,7 @@ try:
     general_chat = config.get('config','general_chat').lower()
     nag_hours = int(config.get('config','nag_hours'))
     test_mode = config.get('config','test_mode')
+    lfg_channel = config.get('events','lfg')
 
 
 except:
@@ -58,6 +59,36 @@ def event_info(command, channel, user) :
     slack_client.api_call("chat.postMessage", channel=channel,
                         text=response, as_user=True)
 
+
+# Query all events in the future
+def list_upcoming_events(command, channel, user, lfg = False) :
+    db = database.Database()
+
+    events = db.fetchAll("""
+                        select e.*, m.member_count
+                        from events e
+                        left outer join (select event_id, count(*) as member_count
+				                        from event_members
+				                        group by event_id) m on e.event_id = m.event_id
+                        where e.record_complete = 1 and e.start_date > now() and e.deleted is null
+                        """)
+    db.close()
+
+    if len(events) == 0 and lfg == False:
+        response = "There are no upcoming events"
+
+    elif len(events) > 0:
+        response = "*ID | Time (EST)             | (# players) Title*"
+        for event in events :
+            start_date_str = str(event['start_date'].strftime("%a %m/%d %H:%M"))
+
+            response = response + "\n" + str(event['event_id']) + " *|* " + start_date_str + " *|* ("+ str(event['member_count']) + ") " + str(event['title'])
+
+        response = response + "\n \n*join event*: @og_bot join event # \n*more info*: @og_bot event info #"
+    
+    slack_client.api_call("chat.postMessage", channel=channel,
+                            text=response, as_user=True)
+    
 
 # creating a new event record
 def create_new_event (command, channel, user):
@@ -175,6 +206,9 @@ def update_event_descr(command, channel, user, event_id):
         else : # event is done. auto join event
             db.runSql("insert into event_members (event_id,member_id,date_created) values(%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[event_id,user])
 
+            # blast to the LFG channel
+            list_upcoming_events("x",lfg_channel,"x",True)
+
         db.close()
 
     slack_client.api_call("chat.postMessage", channel=channel,
@@ -192,6 +226,9 @@ def assign_event_channel(command, channel, user, event_id) :
         bot_utilities.log_event("user " + user + " decided not to assign a channel to event " + str(event_id))
         db.runSql("update events set record_complete = 1, current_prompt = null where event_id = %s",[event_id])
         db.runSql("insert into event_members (event_id,member_id,date_created) values(%s,%s,now()) on duplicate key update event_id = event_id, member_id = member_id",[event_id,user])
+
+        # blast to the LFG channel
+        list_upcoming_events("x",lfg_channel,"x",True)
 
     else :
         # strip channel
@@ -235,35 +272,15 @@ def assign_event_channel(command, channel, user, event_id) :
                             text=blast_message, as_user=True)
             event_info("event info " + str(event_id),stripped_channel,user)
 
+            # blast to the LFG channel
+            list_upcoming_events("x",lfg_channel,"x",True)
+
     
     slack_client.api_call("chat.postMessage", channel=channel,
                             text=response, as_user=True)
     db.close()
 
 
-
-
-# Query all events in the future
-def list_upcoming_events(command, channel, user) :
-    db = database.Database()
-    events = db.fetchAll("select * from events where record_complete = 1 and start_date > now() and deleted is null")
-    db.close()
-
-    if len(events) == 0 :
-        response = "There are no upcoming events"
-
-    else:
-        response = "*ID | Time (EST)             | Title*"
-        for event in events :
-            start_date_str = str(event['start_date'].strftime("%a %m/%d %H:%M"))
-
-            response = response + "\n" + str(event['event_id']) + " *|* " + start_date_str + " *|* " + str(event['title'])
-
-        response = response + "\n \n*join event*: @og_bot join # \n*more info*: @og_bot event info #"
-    
-    slack_client.api_call("chat.postMessage", channel=channel,
-                            text=response, as_user=True)
-    
 
 # lets users join events that have been created
 def join_event(command, channel, user) :

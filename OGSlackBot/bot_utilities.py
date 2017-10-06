@@ -25,6 +25,7 @@ try:
     test_mode = config.get('config','test_mode')
     timeout_min = config.get('events','timeout_min')
     reminder_min = config.get('events','reminder_min')
+    lfg_channel = config.get('events','lfg')
 
 
 except:
@@ -206,6 +207,8 @@ def event_reminders():
 
 
 
+
+
 # determines the state of the user's orientation
 def evaluate_user(user) :
     db = database.Database()
@@ -255,7 +258,7 @@ def orientation_nag() :
     db.close()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": #to depricate
     arguments = sys.argv[1:]
 
     if arguments[0] == "event_reminders" :
