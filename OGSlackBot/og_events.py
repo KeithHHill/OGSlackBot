@@ -46,14 +46,14 @@ def event_info(command, channel, user) :
                                 order by em.date_created asc
                                 """,[event_id])
         db.close()
-        response = event['title'] + "\n"+ \
+        response = event['title'] + "\n*"+ \
                     str(event['start_date'].strftime("%I:%M %p")) + " EST on " + str(event['start_date'].strftime("%A %m/%d")) + \
-                    "\n______\n"+event['descr']+"\nCreated by: " +event['created_name'] + "\n______\nPlayers (" + str(len(players))+"):\n"
+                    "*\n______\n"+event['descr']+"\nCreated by: " +event['created_name'] + "\n______\n_Players (" + str(len(players))+")_:\n"
 
         for player in players :
             response = response + player['member_name'] + "\n"
 
-        response = response + "\nTo join, type @og_bot join event " + str(event_id)
+        response = response + "\n*To join*, type @og_bot join event " + str(event_id)
             
     slack_client.api_call("chat.postMessage", channel=channel,
                         text=response, as_user=True)
@@ -121,7 +121,7 @@ def update_event_time(command, channel, user, event_id) :
             
             #send response
             bot_utilities.log_event("Event "+ str(event_id) + " start time updated: " + start_date_str)
-            response = "Great. Your event will start at " + str(parsed_response.strftime("%I:%M %p")) + " EST on " + str(parsed_response.strftime("%A %m/%d")) + ". (if this is wrong, just start over)\n Please provide a title for the event (25 characters or less)"
+            response = "Great. *Your event will start at " + str(parsed_response.strftime("%I:%M %p")) + " EST on " + str(parsed_response.strftime("%A %m/%d")) + "*. (if this is wrong, just start over)\n Please provide a title for the event (25 characters or less)"
             
             db.close()
           
@@ -143,7 +143,7 @@ def update_event_title(command, channel, user, event_id):
         #update the db and get ready for the next prompt
         db.runSql("update events set title = %s, current_prompt = \"descr\" where event_id = %s",[command,event_id])
         db.close()
-        response = "Great. Your event title has been updated to " + command + "\n Now let's give your event a description. If there are requirements, please include them here."
+        response = "Great. Your event title has been updated to *" + command + "*\n Now let's give your event a description. If there are requirements, please include them here."
         bot_utilities.log_event("Event: " + str(event_id) + " title updated: " + str(command))
 
     slack_client.api_call("chat.postMessage", channel=channel,
@@ -253,13 +253,13 @@ def list_upcoming_events(command, channel, user) :
         response = "There are no upcoming events"
 
     else:
-        response = "ID | Time                     | Title"
+        response = "*ID | Time (EST)             | Title*"
         for event in events :
             start_date_str = str(event['start_date'].strftime("%a %m/%d %H:%M"))
 
-            response = response + "\n" + str(event['event_id']) + " | " + start_date_str + " | " + str(event['title'])
+            response = response + "\n" + str(event['event_id']) + " *|* " + start_date_str + " *|* " + str(event['title'])
 
-        response = response + "\n \njoin event: @og_bot join # \nmore info: @og_bot event info #"
+        response = response + "\n \n*join event*: @og_bot join # \n*more info*: @og_bot event info #"
     
     slack_client.api_call("chat.postMessage", channel=channel,
                             text=response, as_user=True)
