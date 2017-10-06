@@ -5,6 +5,7 @@ import ConfigParser
 import sys
 from slackclient import SlackClient
 import database
+import bot_prompts
 import bot_utilities
 
 # get config
@@ -20,6 +21,7 @@ try:
     log_chat = config.get('config','log_chat')
     general_chat = config.get('config','general_chat').lower()
     nag_hours = int(config.get('config','nag_hours'))
+    nag_threshhold = int(config.get('config','nag_threshhold'))
     test_mode = config.get('config','test_mode')
     timeout_min = config.get('events','timeout_min')
     reminder_min = config.get('events','reminder_min')
@@ -30,6 +32,8 @@ except:
 
 slack_client = SlackClient(token)
 
+
+# logs a message to the bot log channel
 def log_event(message) :
     try :
         print(message)
@@ -38,6 +42,7 @@ def log_event(message) :
         print("error logging")
 
 
+# bot sends a private message to the user (used in non solicited messages)
 def send_private_message(user, message) :
     # create channel
     call = "im.open?user="+user
@@ -46,6 +51,7 @@ def send_private_message(user, message) :
     slack_client.api_call("chat.postMessage", channel=response['channel']['id'], text=message, as_user=True)
 
 
+# returns true if the incomming channel is an IM
 def is_private_conversation(channel):
     response = slack_client.api_call("conversations.info?channel="+channel)
     if response['channel']['is_im'] == False:
@@ -53,6 +59,8 @@ def is_private_conversation(channel):
     else :
         return True
 
+
+# get's the user's name in slack
 def get_slack_name(user_id) :
     call = "users.info?user="+user_id
     response = slack_client.api_call(call)
@@ -63,6 +71,7 @@ def get_slack_name(user_id) :
     return slack_name
 
 
+# checks to see if there has been a name update
 def update_name(user_id,current_name) :
     db = database.Database()
 
@@ -180,7 +189,8 @@ def event_reminders():
     for member in members: 
         t = member['start_date'] - datetime.datetime.now()
         min_to_start = str(divmod(t.days * 86400 + t.seconds, 60)[0])
-        send_private_message(member['member_id'],"Your upcoming event ("+ member['title']+") is scheduled to start in "+ min_to_start + " minutes. \nFor more info on the event, type @og_bot event info "+ str(member['event_id']))
+        rounded_min = int(5 * round(float(int(min_to_start))/5)) # round to to the nearest 5 min
+        send_private_message(member['member_id'],"Your upcoming event ("+ member['title']+") is scheduled to start in about "+ str(rounded_min) + " minutes. \nFor more info on the event, type @og_bot event info "+ str(member['event_id']))
 
         log_event(member['member_id'] + " was reminded of upcoming event " + str(member['event_id']))
 
@@ -194,6 +204,55 @@ def event_reminders():
                 """,[reminder_min])
     db.close()
 
+
+
+# determines the state of the user's orientation
+def evaluate_user(user) :
+    db = database.Database()
+    user_record = db.fetchAll("""
+                        select * from member_orientation where member_id = %s
+    """,[user])
+    record = user_record[0]
+    
+    # if rules are outstanding, prompt them
+    if record["accepted"] == 0:
+        bot_utilities.log_event("user "+ record['member_name'] + " has been prompted for rules")
+
+        bot_prompts.prompt_rules(user,record["private_channel"])
+
+    # if name is outstanding, prompt them
+    elif record["accepted"] == 1 and record["name_correct"] == 0 :
+        bot_utilities.log_event("user "+ record['member_name'] + " has been prompted for name")
+        bot_prompts.prompt_username(user,record["private_channel"])
+
+    # if club is outstanding, prompt them
+    elif record["accepted"] == 1 and record["name_correct"] == 1 and record["in_club"] == 0 :
+        bot_utilities.log_event("user "+ record['member_name'] + " has been prompted for club")
+        bot_prompts.prompt_club(user,record["private_channel"])
+    db.close()
+
+
+
+# if someone doesn't complete orientation, send them an update. Also notify the leaders if there is an exceptionally long period
+def orientation_nag() :
+    db = database.Database()
+    orientations = db.fetchAll("select * from member_orientation where last_updated < now() - interval %s hour and date_completed is null", [nag_hours])      
+
+    # for each person, send them a private message
+    for orientation in orientations:
+        bot_utilities.log_event(orientation['member_name']+" did not complete orientation and has been nagged")
+        slack_client.api_call("chat.postMessage", channel=orientation['private_channel'],
+                text="Sorry to bother, but we didn't get a chance to finish and my owner will delete me if I don't do my job.", as_user=True)
+        evaluate_user(orientation['member_id']) #continues with the orientation
+        db.runSql("update member_orientation set nag_count = nag_count + 1 where member_id = %s",[orientation['member_id']])
+
+        if (orientation['nag_count'] + 1) % nag_threshhold == 0 : # for anyone that has hit our threshhold, send a message to leader chat
+            message = "Notice: " + orientation['member_name'] + " has not completed oritation in " + str(orientation['nag_count'] + 1 ) + " days."
+            slack_client.api_call("chat.postMessage", channel=leader_chat, text=message, as_user=True)
+
+
+                    
+    db.close()
 
 
 if __name__ == "__main__":

@@ -46,30 +46,6 @@ slack_client = SlackClient(token)
 
 
 
-def evaluate_user(user) :
-    db = database.Database()
-    user_record = db.fetchAll("""
-                        select * from member_orientation where member_id = %s
-    """,[user])
-    record = user_record[0]
-    
-    # if rules are outstanding, prompt them
-    if record["accepted"] == 0:
-        bot_utilities.log_event("user "+ record['member_name'] + " has been prompted for rules")
-
-        bot_prompts.prompt_rules(user,record["private_channel"])
-
-    # if name is outstanding, prompt them
-    elif record["accepted"] == 1 and record["name_correct"] == 0 :
-        bot_utilities.log_event("user "+ record['member_name'] + " has been prompted for name")
-        bot_prompts.prompt_username(user,record["private_channel"])
-
-    # if club is outstanding, prompt them
-    elif record["accepted"] == 1 and record["name_correct"] == 1 and record["in_club"] == 0 :
-        bot_utilities.log_event("user "+ record['member_name'] + " has been prompted for club")
-        bot_prompts.prompt_club(user,record["private_channel"])
-    db.close()
-
 
 def new_user_detected(user):
     
@@ -97,7 +73,7 @@ def new_user_detected(user):
     
     db.close()
 
-    evaluate_user(user)
+    bot_utilities.evaluate_user(user)
     
 
 
@@ -135,7 +111,7 @@ def handle_yes_no(command, channel, user) :
                             text=message, as_user=True)
 
                 # find the next prompt
-                evaluate_user(user)
+                bot_utilities.evaluate_user(user)
 
 
             else : #user declines
@@ -162,7 +138,7 @@ def handle_yes_no(command, channel, user) :
                 db.runSql("""update member_orientation set last_updated= now(), name_correct = 1, prompted_for_name = 0 where member_id = %s
                 """,[user])
 
-                evaluate_user(user)
+                bot_utilities.evaluate_user(user)
 
             else: #user needs to correct the name
                 bot_utilities.log_event("user "+ record['member_name'] + " needed help with the name")
@@ -227,13 +203,13 @@ def handle_command(command, channel, user,command_orig):
         response = """
 You can use the following commands:\n
 _______\n
-CREATE EVENT: creates a new event\n
-LIST EVENTS: lists upcoming events\n
-JOIN EVENT #: joins an indicated event\n
-EVENT INFO #: provides event details\n
-DELETE EVENT #: deletes an event you have created\n
-SHOW MY EVENTS: shows upcoming events you have joined\n
-UPDATE EVENT TIME: Lets you update a time for an event
+*CREATE EVENT*: creates a new event\n
+*LIST EVENTS*: lists upcoming events\n
+*JOIN EVENT #*: joins an indicated event\n
+*EVENT INFO #*: provides event details\n
+*DELETE EVENT #*: deletes an event you have created\n
+*SHOW MY EVENTS*: shows upcoming events you have joined\n
+*UPDATE EVENT TIME*: Lets you update a time for an event
                     """
 
 
@@ -312,7 +288,7 @@ UPDATE EVENT TIME: Lets you update a time for an event
             slack_client.api_call("chat.postMessage", channel=channel,
                             text=response, as_user=True)
             bot_utilities.update_name(record['member_id'],record['member_name'])
-            evaluate_user(user)
+            bot_utilities.evaluate_user(user)
             deffered = True
 
         elif record["prompted_for_club"] == 1:
@@ -347,9 +323,14 @@ def parse_slack_output(slack_rtm_output):
                 #print ("\n")
                 #print(output)
                 #print ("\n")
-                        
+
+                try : # ensure the message has a user and text
+                    text = output['text']
+                    user = output['user']
+                except:
+                    return None,None,None,None
             
-            
+
                 if output and 'text' in output and AT_BOT in output['text']:
                     # return text after the @ mention, whitespace removed
                     output['text'] = output['text'].replace(u"\u2019", '\'')
@@ -373,9 +354,14 @@ def parse_slack_output(slack_rtm_output):
                                    output['text']
         return None, None, None, None
 
-    except :
+    except : # nested tries to prevent the bot from crashing
         bot_utilities.log_event("An unhandled error was encountered - parse_slack_output")
-        bot_utilities.log_event(output['channel']+" " + output['user'])
+        try: 
+            bot_utilities.log_event(output['channel']+" " + output['user'])
+            return None, None, None, None
+        except :
+            bot_utilities.log_event("failed to log the unhandled error")
+            return None, None, None, None
 
 
 if __name__ == "__main__":
@@ -412,22 +398,18 @@ if __name__ == "__main__":
             # perform check to nag people that stopped payting attention
             if seconds >= 3600:
                 seconds = 0
-                db = database.Database()
-                orientations = db.fetchAll("select * from member_orientation where last_updated < now() - interval %s hour and date_completed is null", [nag_hours])      
-                # bot_utilities.log_event("checking for people to nag")
-                for orientation in orientations:
-                    bot_utilities.log_event(orientation['member_name']+" did not complete orientation and has been nagged")
-                    slack_client.api_call("chat.postMessage", channel=orientation['private_channel'],
-                            text="Sorry to bother, but we didn't get a chance to finish and my owner will delete me if I don't do my job.", as_user=True)
-                    evaluate_user(orientation['member_id'])
-                    db.runSql("update member_orientation set nag_count = nag_count + 1 where member_id = %s",[orientation['member_id']])
+                bot_utilities.orientation_nag()
 
                 # check for name changes
+                db = database.Database()
                 users = db.fetchAll("select * from member_orientation")
                 for user in users:
                     bot_utilities.update_name(user['member_id'],user['member_name'])
-                    
+                
                 db.close()
+
+
+
             time.sleep(READ_WEBSOCKET_DELAY)
     else:
         bot_utilities.log_event("Connection failed. Invalid Slack token or bot ID?")
