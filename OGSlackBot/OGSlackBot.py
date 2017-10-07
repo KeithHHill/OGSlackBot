@@ -197,7 +197,7 @@ def handle_command(command, channel, user,command_orig):
     
     if command.startswith('hi') or command.startswith('hello'):
         response = "well hello there Guardian"
-
+        
     
     elif command.startswith('help events') : 
         response = """
@@ -210,6 +210,7 @@ _______\n
 *DELETE EVENT #*: deletes an event you have created\n
 *SHOW MY EVENTS*: shows upcoming events you have joined\n
 *UPDATE EVENT TIME*: Lets you update a time for an event
+*ADD PLAYER TO EVENT*: Lets you add someone to an event you created
                     """
 
 
@@ -264,6 +265,10 @@ _______\n
     elif command.startswith("update event time"):
         og_events.update_time_on_event(command,channel,user)
         deffered = True
+
+    elif command.startswith("add player"):
+        deffered = True
+        og_events.add_other_to_event(command,channel,user)
 
     elif bot_utilities.actively_creating_event(user) == True :
         og_events.handle_command(command, channel, user,command_orig)
