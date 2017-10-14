@@ -5,6 +5,7 @@ from slackclient import SlackClient
 import database
 import bot_utilities
 import og_events
+import game_info
 
 # get config
 myPath = os.path.dirname(os.path.abspath(__file__))
@@ -32,3 +33,5 @@ if __name__ == "__main__":
         elif arguments[0] == "post_to_lfg" :
             og_events.list_upcoming_events("x",lfg_channel,"x",True)
     
+        elif arguments[0] == "post_upcoming_releases" :
+            game_info.post_upcoming_releases()

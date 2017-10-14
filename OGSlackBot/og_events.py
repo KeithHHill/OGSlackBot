@@ -74,14 +74,15 @@ Great, you created an event, here are some helpful commands you might need:\n\n*
 # Query all events in the future
 def list_upcoming_events(command, channel, user, lfg = False) :
     db = database.Database()
-
+    response = "something went wrong"
     events = db.fetchAll("""
                         select e.*, m.member_count
                         from events e
                         left outer join (select event_id, count(*) as member_count
 				                        from event_members
 				                        group by event_id) m on e.event_id = m.event_id
-                        where e.record_complete = 1 and e.start_date > now() and e.deleted is null
+                        where e.record_complete = 1 and e.start_date > now() - interval 3 hour and e.deleted is null
+                        order by start_date asc
                         """)
     db.close()
 
@@ -97,7 +98,8 @@ def list_upcoming_events(command, channel, user, lfg = False) :
 
         response = response + "\n \n*join event*: @og_bot join event # \n*more info*: @og_bot event info #"
     
-    slack_client.api_call("chat.postMessage", channel=channel,
+    if len(events) > 0 or lfg == False :
+        slack_client.api_call("chat.postMessage", channel=channel,
                             text=response, as_user=True)
     
 
@@ -308,7 +310,7 @@ def join_event(command, channel, user) :
         records = db.fetchAll("""select e.event_id, e.title, e.start_date, em.member_id
                                 from events e 
                                 left outer join event_members em on e.event_id = em.event_id
-                                where e.record_complete = 1 and e.start_date > now() and e.event_id = %s and e.deleted is null
+                                where e.record_complete = 1 and e.start_date > now() - interval 3 hour and e.event_id = %s and e.deleted is null
                             """,[event_id])
 
         # ensure the selected event is valid and in the future
