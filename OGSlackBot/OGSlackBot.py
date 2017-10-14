@@ -14,6 +14,7 @@ import database
 import bot_prompts
 import bot_utilities
 import og_events
+import game_info
 
 
 # get config
@@ -197,7 +198,7 @@ def handle_command(command, channel, user,command_orig):
     
     if command.startswith('hi') or command.startswith('hello'):
         response = "well hello there Guardian"
-
+        
     
     elif command.startswith('help events') : 
         response = """
@@ -210,11 +211,19 @@ _______\n
 *DELETE EVENT #*: deletes an event you have created\n
 *SHOW MY EVENTS*: shows upcoming events you have joined\n
 *UPDATE EVENT TIME*: Lets you update a time for an event
+*ADD PLAYER TO EVENT*: Lets you add someone to an event you created
                     """
 
+    elif command.startswith('help games') :
+        response = """Once a week I'll post to the general chat about upcoming games.  You can also use these commmands:\n
+_______\n
+*UPCOMING RELEASES*- show upcoming releases\n
+*UPCOMING RELEASES IN # DAYS*- same as above. Lets you specify the number of days\n
+*SHOW INFO FOR GAME: HALO 5* - lets you get information about a specific game
+        """
 
     elif command.startswith('help') :
-        response = "My purpose is to help the clan stay organized and welcome new people to the group..\n \n @og_bot help events : I'll tell you about my events feature"
+        response = "My purpose is to help the clan stay organized and welcome new people to the group..\n \n @og_bot help events : I'll tell you about my events feature\n\n @og_bot help games : I'll tell you some info about games."
     
     
         # test the system
@@ -255,6 +264,9 @@ _______\n
     elif "show my" in command and ("event" in command or "game" in command):
         response = "Sorry, I haven't learned how to do that yet.  Check back later."
 
+    elif ("upcoming" in command or "releasing" in command) and ("release" in command or "game" in command):
+        game_info.upcoming_release_command(command,channel,user)
+        deffered = True
 
     elif command.startswith("go kill yourself") and user == admin_user :
         bot_utilities.log_event("self destruct activated")
@@ -264,6 +276,13 @@ _______\n
     elif command.startswith("update event time"):
         og_events.update_time_on_event(command,channel,user)
         deffered = True
+
+    elif command.startswith("add player"):
+        deffered = True
+        og_events.add_other_to_event(command,channel,user)
+
+    elif command.startswith("show info for game"):
+        message = "sorry, I haven't learend how to do that yet.  Check back later."
 
     elif bot_utilities.actively_creating_event(user) == True :
         og_events.handle_command(command, channel, user,command_orig)
@@ -340,7 +359,7 @@ def parse_slack_output(slack_rtm_output):
                            output['text'].split(AT_BOT)[1].strip()
             
                 #handle im conversations without needing @
-                elif output and 'text' in output and output['user'] != BOT_ID:
+                elif output and 'text' in output and output['user'] != BOT_ID and output['user'] != "USLACKBOT":
                     output['text'] = output['text'].replace(u"\u2019", '\'')
                 
 
@@ -376,6 +395,7 @@ if __name__ == "__main__":
             
             seconds += 1
 
+                
 
             # we check for new users in the general chat
             if seconds % 60 == 0  and test_mode != "TRUE":

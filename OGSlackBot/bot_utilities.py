@@ -7,6 +7,7 @@ from slackclient import SlackClient
 import database
 import bot_prompts
 import bot_utilities
+import requests
 
 # get config
 myPath = os.path.dirname(os.path.abspath(__file__))
@@ -25,12 +26,15 @@ try:
     test_mode = config.get('config','test_mode')
     timeout_min = config.get('events','timeout_min')
     reminder_min = config.get('events','reminder_min')
-
+    
 
 except:
     print ("Error reading the config file")
 
 slack_client = SlackClient(token)
+
+
+
 
 
 # logs a message to the bot log channel
@@ -40,6 +44,14 @@ def log_event(message) :
         slack_client.api_call("chat.postMessage", channel=log_chat,text=message, as_user=True)
     except :
         print("error logging")
+
+
+# posts text to a specified channel
+def post_to_channel(channel,text):
+    try:
+        slack_client.api_call("chat.postMessage", channel=channel,text=text, as_user=True)
+    except :
+        log_event("failed to post to channel: " + str(channel) + ": " + str(text))
 
 
 # bot sends a private message to the user (used in non solicited messages)
@@ -126,7 +138,7 @@ def parse_event_from_command(user, command) :
                                 from events e 
                                 inner join member_orientation mo on e.created_by = mo.member_id
                                 left outer join event_members em on e.event_id = em.event_id
-                                where e.record_complete = 1 and e.start_date > now() and e.event_id = %s
+                                where e.record_complete = 1 and e.start_date > now() - interval 3 hour and e.event_id = %s
                             """,[event_id])
         db.close()
         # ensure the selected event is valid and in the future
@@ -147,6 +159,16 @@ def parse_event_from_command(user, command) :
 
     return event_id, response, None
 
+
+# tries to find a number in the command and returns it
+def parse_number_from_command(command):
+    str_cmd = str(command)
+    try :
+        num_found = int(''.join([c for c in str_cmd if c in '0123456789']))
+    except :
+        return 0
+
+    return num_found
 
 # returns true if the user is in an event.  False if they are not
 def user_is_in_event(user, event_id): 
@@ -232,30 +254,76 @@ def evaluate_user(user) :
     db.close()
 
 
+# returns true if the user is active in slack
+def user_is_active(user):
+    response = slack_client.api_call("users.info",user = user)
+
+    if response['ok'] == True :
+        if response['user']['deleted'] == True :
+            return False
+        else : 
+            return True
+    else :
+        return False
+
 
 # if someone doesn't complete orientation, send them an update. Also notify the leaders if there is an exceptionally long period
 def orientation_nag() :
     db = database.Database()
-    orientations = db.fetchAll("select * from member_orientation where last_updated < now() - interval %s hour and date_completed is null", [nag_hours])      
+    orientations = db.fetchAll("select * from member_orientation where last_updated < now() - interval %s hour and date_completed is null and inactive = 0", [nag_hours])      
+
 
     # for each person, send them a private message
     for orientation in orientations:
-        bot_utilities.log_event(orientation['member_name']+" did not complete orientation and has been nagged")
-        slack_client.api_call("chat.postMessage", channel=orientation['private_channel'],
-                text="Sorry to bother, but we didn't get a chance to finish and my owner will delete me if I don't do my job.", as_user=True)
-        evaluate_user(orientation['member_id']) #continues with the orientation
-        db.runSql("update member_orientation set nag_count = nag_count + 1 where member_id = %s",[orientation['member_id']])
+        # see if they are still active
+        isActive = user_is_active(orientation['member_id'])
 
-        if (orientation['nag_count'] + 1) % nag_threshhold == 0 : # for anyone that has hit our threshhold, send a message to leader chat
-            message = "Notice: " + orientation['member_name'] + " has not completed oritation in " + str(orientation['nag_count'] + 1 ) + " days."
-            slack_client.api_call("chat.postMessage", channel=leader_chat, text=message, as_user=True)
+        if isActive == True :
+            bot_utilities.log_event(orientation['member_name']+" did not complete orientation and has been nagged")
+            slack_client.api_call("chat.postMessage", channel=orientation['private_channel'],
+                    text="Sorry to bother, but we didn't get a chance to finish and my owner will delete me if I don't do my job.", as_user=True)
+            evaluate_user(orientation['member_id']) #continues with the orientation
+            db.runSql("update member_orientation set nag_count = nag_count + 1 where member_id = %s",[orientation['member_id']])
 
+            if (orientation['nag_count'] + 1) % nag_threshhold == 0 : # for anyone that has hit our threshhold, send a message to leader chat
+                message = "Notice: " + orientation['member_name'] + " has not completed oritation in " + str(orientation['nag_count'] + 1 ) + " days."
+                slack_client.api_call("chat.postMessage", channel=leader_chat, text=message, as_user=True)
+
+        else :
+            db.runSql("update member_orientation set inactive = 1 where member_id = %s",[orientation['member_id']])
+            log_event("User " + orientation['member_id'] + " was attempted to be nagged but is now inactive")
 
                     
     db.close()
 
 
-if __name__ == "__main__":
+
+# gets json from the requested url
+def getPage(url, proxies=''):
+    try:
+        return request(url, proxies)
+    except:
+        return request(url, proxies) #Retry
+
+def request(url, proxies=''):
+    reqHeaders = {'User-Agent' : 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.101 Safari/537.36',
+                  #'X-API-Key': 'c18b20ce8a54453c96d962e2e639f4b0'
+                  }
+    
+    page = requests.get(url, headers = reqHeaders, proxies=proxies, timeout=45)
+    
+    try: 
+        data = page.json()
+    except :
+        return None
+
+    return data
+
+
+
+
+
+if __name__ == "__main__": #to depricate
     arguments = sys.argv[1:]
 
     if arguments[0] == "event_reminders" :
