@@ -111,7 +111,7 @@ def upcoming_release_command(command, channel, user) :
     days = bot_utilities.parse_number_from_command(command)
 
     if days == 0 :
-        days = release_future_days
+        days = int(release_future_days)
 
     if days > 30 :
         bot_utilities.post_to_channel(channel,"Sorry, I am only limited to a maximum of 30 days. Please try again.")
