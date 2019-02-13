@@ -243,6 +243,10 @@ _______\n
         map_gamertag.handle_conversation(command,channel,user)
         deffered = True
 
+    elif "gamertag" in command and ("change" in command or "update" in command) :
+        map_gamertag.change_gamertag(command,channel,user)
+        deffered = True
+
     elif command.startswith("create an event") or command.startswith("create event") :
         og_events.create_new_event(command, channel, user)
         deffered = True

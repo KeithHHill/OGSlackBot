@@ -37,6 +37,7 @@ def handle_conversation (command, channel, user):
     # conversation status
     # 0 = new entry.  Awaiting response
     # 1 = gamertag has been mapped
+    # 2 = user has indicated gamertag has changed. Awaiting response
 
     db = database.Database()
 
@@ -58,7 +59,7 @@ def handle_conversation (command, channel, user):
     active_conversation = has_going_conversation(user)
 
 
-    if active_conversation and gamertags[0]["conversation_status"] == 0 :  # active conversation and awaiting response.  This should be the user's gamertag.
+    if active_conversation and gamertags[0]["conversation_status"] in [0,2] :  # active conversation and awaiting response.  This should be the user's gamertag.
         db.runSql("update gamertags set gamertag = %s, last_updated = now(), conversation_status = 1, conversation_date = Null where member_id = %s",[command,user])
         bot_utilities.post_to_channel(channel,"Great, I have set your gamertag to be "+ command + ". If that's not right, simply say 'change gamertag'")
         bot_utilities.log_event("user "+ user + " has mapped gamertag: " + command)
@@ -67,7 +68,7 @@ def handle_conversation (command, channel, user):
     elif active_conversation == False and gamertags[0]["conversation_status"] == 0 :  # stale conversation.  Let's refresh.
 
         db.runSql("update gamertags set conversation_date = now() where member_id = %s",[user])
-        bot_utilities.post_to_channel(channel,"I still need to get your gamertag.  What is it?  {include nothing but your gamertag in the response)")
+        bot_utilities.post_to_channel(channel,"I still need to get your gamertag.  What is it?  (include nothing but your gamertag in the response)")
         return None
 
 
@@ -75,3 +76,19 @@ def handle_conversation (command, channel, user):
     db.close()
 
 
+
+# user has requested to change their gamertag
+def change_gamertag(command, channel, user) :
+    
+    # if they have a gamertag mapped, we flag it as requesting to change and ask for the new one.
+    if bot_utilities.has_gamertag(user) == True :
+        db = database.Database()
+        db.runSql("update gamertags set conversation_status = 2, conversation_date = now() where member_id = %s",[user])
+        db.close()
+
+        bot_utilities.post_to_channel(channel,"Sure, I can update your gamertag on record.  What is your new one? (include nothing but your gamertag in the response)")
+        bot_utilities.log_event("user "+ user + " has started the gamertag change process: " + command)
+        return None
+    
+    else : # nothing is mapped, so let's start the process
+        handle_conversation(command,channel,user)
