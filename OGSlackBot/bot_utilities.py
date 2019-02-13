@@ -35,6 +35,25 @@ slack_client = SlackClient(token)
 
 
 
+# determines if the user has a mapped gamertag.  If not, returns False. 
+def has_gamertag (user) :
+    db = database.Database()
+    
+    #fetch gamertags
+    gamertags = db.fetchAll("""
+    select g.gamertag 
+    from gamertags g
+    inner join member_orientation on g.member_id = member_orientation.member_id
+    where g.member_id = %s and g.last_updated is not Null
+    """,[user])
+
+    db.close()
+
+    #did we find something?
+    if len(gamertags) > 0 :
+        return True
+    else :
+        return False
 
 
 # logs a message to the bot log channel

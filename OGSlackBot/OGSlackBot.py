@@ -15,6 +15,8 @@ import bot_prompts
 import bot_utilities
 import og_events
 import game_info
+import games
+import map_gamertag
 
 
 # get config
@@ -236,8 +238,17 @@ _______\n
         handle_yes_no(command,channel,user)
         deffered = True
 
+    # is the person currently talking to the bot about mapping a gamertag?
+    elif map_gamertag.has_going_conversation(user) == True :
+        map_gamertag.handle_conversation(command,channel,user)
+        deffered = True
+
     elif command.startswith("create an event") or command.startswith("create event") :
         og_events.create_new_event(command, channel, user)
+        deffered = True
+
+    elif command.startswith("i play") :
+        games.game_add_request(command, channel, user)
         deffered = True
 
     elif "list" in command and ("events" in command or "games" in command):
