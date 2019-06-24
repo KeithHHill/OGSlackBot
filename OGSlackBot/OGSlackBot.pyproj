@@ -31,7 +31,22 @@
     <Compile Include="database.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="games_tracked\anthem.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="games_tracked\halo5.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="games_tracked\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="game_info.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="games.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="map_gamertag.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="og_events.py">
@@ -44,6 +59,10 @@
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|PythonCore|2.7-32" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="E:\Diknak\Documents\Repo\OGSlackBot\OGSlackBot\OGSlackBot\games_tracked\" />
+    <Folder Include="games_tracked\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
