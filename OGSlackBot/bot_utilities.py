@@ -56,6 +56,18 @@ def has_gamertag (user) :
         return False
 
 
+def get_gamertag (user) :
+    db = database.Database()
+
+    if has_gamertag(user):
+        gamertags = db.fetchAll("select gamertag from gamertags where member_id = %s",[user])
+        return gamertags[0]['gamertag']
+
+    else :
+        return None
+
+    db.close()
+
 # logs a message to the bot log channel
 def log_event(message) :
     try :

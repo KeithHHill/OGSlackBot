@@ -10,6 +10,7 @@ import database
 import bot_utilities
 import string
 from games_tracked import anthem
+from games_tracked import halo5
 
 
 
@@ -63,4 +64,26 @@ def game_add_request (command, channel, user) :
         # game specific tasks
         if game_id == "ANTHEM" :
             anthem.anthem_user_registered(command,channel,user)
+        
+        elif game_id == "HALO5" :
+            halo5.halo5_user_registered(command,channel,user)
 
+
+# user has been mapped to a game and requests to be removed
+def unmap_game_from_user (command,channel,user) :
+    # remove the precurosor text
+    game_name = string.replace(command,"remove me from ", "")
+
+    # make sure it's a tracked game and get the game_id if it is
+    game_check, game_id = is_valid_game(game_name)
+
+    # make sure the game is valid
+    if game_check :
+        db = database.Database()
+        db.runSql("update player_games set active = 0 where member_id = %s and game_id = %s",[user,game_id])
+        db.close()
+        bot_utilities.post_to_channel(channel,"No problem, you have been removed from " + game_name + ". If you want to rejoin, let me know.")
+        bot_utilities.log_event("user " + user + " has unmapped them from a game: " + command)
+   
+    else :
+        bot_utilities.post_to_channel(channel,"Sorry, but I don't recognize that game name.  Can you try again?")

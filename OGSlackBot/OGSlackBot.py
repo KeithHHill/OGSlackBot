@@ -17,6 +17,7 @@ import og_events
 import game_info
 import games
 import map_gamertag
+from games_tracked import halo5
 
 
 # get config
@@ -217,17 +218,34 @@ _______\n
                     """
 
     elif command.startswith('help games') :
-        response = """Once a week I'll post to the general chat about upcoming games.  You can also use these commmands:\n
+        response = """I get this information from Giant Bomb.  If it's bad info, blame them, not me.\n
 _______\n
 *UPCOMING RELEASES*- show upcoming releases\n
 *UPCOMING RELEASES IN # DAYS*- same as above. Lets you specify the number of days\n
 *SHOW INFO FOR GAME: HALO 5* - lets you get information about a specific game
         """
+    
+    elif command.startswith('help tracked') :
+        response = """I have custom functionality for games. Use one of these commands\n
+_______\n
+*I PLAY HALO 5*- I will start pulling data for Halo 5\n
+*UPDATE GAMERTAG*- Tell me when you change your gamertag\n
+        """
+
+    elif command.startswith('help halo') :
+        response = """I have custom functionality for Halo. Use one of these commands\n
+_______\n
+*HALO 5 SEASON STATS*- I will pull in the stats for the current season\n
+        """
 
     elif command.startswith('help') :
-        response = "My purpose is to help the clan stay organized and welcome new people to the group..\n \n @og_bot help events : I'll tell you about my events feature\n\n @og_bot help games : I'll tell you some info about games."
+        response = """My purpose is to help the clan stay organized and welcome new people to the group..\n
+        @og_bot help events : I'll tell you about my events feature
+        @og_bot help games : I'll tell you some info about games.
+        @og_bot help tracked : I'll tell you about games I can track for you that you play 
+        @og_bot help halo : I'll tell you about Halo specific functions
     
-    
+    """
         # test the system
     elif command.startswith("pretend i'm new") or command.startswith("pretend i am new"):
         response ="Welcome guardian! I'm the OG Bot and I'm going to help you get started.  Check your private messages."
@@ -253,6 +271,10 @@ _______\n
 
     elif command.startswith("i play") :
         games.game_add_request(command, channel, user)
+        deffered = True
+
+    elif command.startswith("remove me from") :
+        games.unmap_game_from_user(command, channel, user)
         deffered = True
 
     elif "list" in command and ("events" in command or "games" in command):
@@ -298,6 +320,15 @@ _______\n
 
     elif command.startswith("show info for game"):
         message = "sorry, I haven't learend how to do that yet.  Check back later."
+
+
+    elif command.startswith("halo 5"): 
+        deffered = True
+        halo5.handle_command(command,channel,user)
+
+    
+        
+
 
     elif bot_utilities.actively_creating_event(user) == True :
         og_events.handle_command(command, channel, user,command_orig)
