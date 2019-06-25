@@ -8,6 +8,7 @@ import database
 import bot_prompts
 import bot_utilities
 import requests
+from games_tracked import halo5
 
 # get config
 myPath = os.path.dirname(os.path.abspath(__file__))
@@ -359,5 +360,7 @@ if __name__ == "__main__": #to depricate
 
     if arguments[0] == "event_reminders" :
         event_reminders()
+
+    
         
    

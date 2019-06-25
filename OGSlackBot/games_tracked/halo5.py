@@ -28,15 +28,76 @@ except:
     print ("Error reading the config file")
 
 player_emblem_url = 'https://www.haloapi.com/profile/h5/profiles/diknak/emblem'
-headers = {'Ocp-Apim-Subscription-Key' : api_key}
+headers = {'Accept-Language': 'en', 'Ocp-Apim-Subscription-Key' : api_key}
 
 
+# updates the database with the current playlist information
+def update_seasons() :
+    try :
+        params = urllib.urlencode({
+        })
+
+        conn = httplib.HTTPSConnection('www.haloapi.com')
+        conn.request("GET", "/metadata/h5/metadata/playlists?%s" % params, "{body}", headers)
+        response = conn.getresponse()
+        playlists = json.loads(response.read())
+        conn.close()
+
+        db = database.Database()
+        for playlist in playlists :
+            playlist_id = playlist['id']
+            content_id = playlist['contentId']
+            game_mode = playlist['gameMode']
+            is_active = playlist['isActive']
+            ranked = playlist ['isRanked']
+        
+            
+            db.execute("replace into halo5_seasons (playlist_id, content_id,game_mode,is_active,ranked,updated) values(%s,%s,%s,%s,%s,now())",[playlist_id,content_id,game_mode,is_active,ranked])
+
+        db.close()
+        bot_utilities.log_event("halo 5 playlists updated")
+    except :
+        bot_utilities.log_event("Failed to update the halo 5 playlists")
+
+
+# ranks are returned in numerical format for storage
+def get_rank_value(rank_data):
+    try :
+        rank_id = str(rank_data['DesignationId']) + "-" + str(rank_data['Tier']) #form key from data
+
+        db = database.Database()
+        values = db.fetchAll("select rank_value from halo5_ranks where rank_id =%s",[rank_id])
+        db.close()
+
+        return values[0]['rank_value']
+    except :
+        return 0
+
+# pass in the numeric rank value and return a text to display
+def get_rank_text(rank_value) :
+    if rank_value == 0 :
+        return "n/a"
+    else :
+        try :
+            db = database.Database()
+            rank_text = db.fetchAll("select name from halo5_ranks where rank_value = %s",[rank_value])
+            db.close()
+            return rank_text[0]['name']
+        except :
+            return "n/a"
+
+
+### primary entry point
 def handle_command (command,channel,user) :
     if "season" in command and "stats" in command :
         if bot_utilities.has_gamertag(user) :
             halo5_season_stats(command,channel,user)
         else :
             bot_utilities.post_to_channel(channel,"Sorry, but I don't have a gamertag registered.  Try the \"Update gamertag\" command")
+
+    else :
+        bot_utilities.post_to_channel(channel,"Sorry, but that command isn't supported  Try using the command '@og_bot help halo' to see what I can do.")
+        
 
 
 def halo5_user_registered (command, channel, user) :   
@@ -59,7 +120,8 @@ def halo5_user_stats (command,channel,user) :
 def update_season_stats(user, season = None) :
     season_url = "/stats/h5/servicerecords/arena?players={gamertag}&%s"
     user_gamertag = bot_utilities.get_gamertag(user)
-    season_url = season_url.format(gamertag=user_gamertag)
+    user_gamertag_enc = str.replace(str(user_gamertag)," ","+") # handle spaces in the gamertag
+    season_url = season_url.format(gamertag=user_gamertag_enc)
 
 
     # fetch the data from the API
@@ -76,33 +138,37 @@ def update_season_stats(user, season = None) :
         data = json.loads(response.read())
         conn.close()
 
-        data_season = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['PlaylistId']
-        data_rank = data['Results'][0]['Result']['SpartanRank']
-        data_csr = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['HighestCsr']
-        data_kills = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalKills']
-        data_deaths = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalDeaths']
-        data_assists = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalAssists']
-        data_games_completed = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalGamesCompleted']
-        data_games_won = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalGamesWon']
-        data_games_lost = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalGamesLost']
-        data_shots_fired = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalShotsFired']
-        data_shots_landed = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalShotsLanded']
-        data_best_weapon = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['WeaponWithMostKills']['WeaponId']['StockId']
-        data_best_weapon_kills = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['WeaponWithMostKills']['TotalKills']
-        data_melee_kills = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalMeleeKills']
-        data_assassinations = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][0]['TotalAssassinations']
-        
-        # write to the database
-        if response.status == 200 :
-            db = database.Database()
-            db.execute("""
-                replace into halo5_season_stats (member_id,gamertag,season,date_updated,rank,highest_csr,total_kills,total_deaths,total_assists,games_completed,games_won,games_lost,shots_fired,shots_landed,best_weapon,best_weapon_kills,melee_kills,assassinations)
-                values (%s,%s,%s,now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """,[user,user_gamertag, data_season, data_rank, data_csr, data_kills, data_deaths, data_assists, data_games_completed, data_games_won, data_games_lost, data_shots_fired, data_shots_landed, data_best_weapon, data_melee_kills, data_melee_kills, data_assassinations]
-            )
+        data_len = len(data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats']) # number of records for the season
+        count = 0
+        while count< data_len : 
+            data_season = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['PlaylistId']
+            data_rank = data['Results'][0]['Result']['SpartanRank']
+            data_csr = get_rank_value(data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['HighestCsr'])
+            data_kills = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalKills']
+            data_deaths = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalDeaths']
+            data_assists = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalAssists']
+            data_games_completed = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalGamesCompleted']
+            data_games_won = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalGamesWon']
+            data_games_lost = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalGamesLost']
+            data_shots_fired = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalShotsFired']
+            data_shots_landed = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalShotsLanded']
+            data_best_weapon = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['WeaponWithMostKills']['WeaponId']['StockId']
+            data_best_weapon_kills = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['WeaponWithMostKills']['TotalKills']
+            data_melee_kills = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalMeleeKills']
+            data_assassinations = data['Results'][0]['Result']['ArenaStats']['ArenaPlaylistStats'][count]['TotalAssassinations']
+            count +=1
 
-            db.close()
-        return True
+            # write to the database
+            if response.status == 200 :
+                db = database.Database()
+                db.execute("""
+                    replace into halo5_season_stats (member_id,gamertag,season,date_updated,rank,highest_csr,total_kills,total_deaths,total_assists,games_completed,games_won,games_lost,shots_fired,shots_landed,best_weapon,best_weapon_kills,melee_kills,assassinations)
+                    values (%s,%s,%s,now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """,[user,user_gamertag, data_season, data_rank, data_csr, data_kills, data_deaths, data_assists, data_games_completed, data_games_won, data_games_lost, data_shots_fired, data_shots_landed, data_best_weapon, data_melee_kills, data_melee_kills, data_assassinations]
+                )
+
+                db.close()
+            return True
 
     except :
         bot_utilities.log_event("something went wrong when writing halo 5 season stats for gamertag " + user_gamertag)
@@ -118,8 +184,16 @@ def halo5_season_stats (command,channel,user,season = None) :
     success = update_season_stats(user,season)
     if success :
         db = database.Database()
-        records = db.fetchAll("select * from halo5_season_stats where member_id = %s",[user])
+        records = db.fetchAll("""
+            select s.member_id, s.gamertag, max(s.rank) as rank, max(s.highest_csr) as highest_csr, sum(s.total_kills) as total_kills, sum(s.total_deaths) as total_deaths, sum(s.total_assists) as total_assists, sum(s.games_completed) as games_completed, sum(s.games_won) as games_won, sum(s.games_lost) as games_lost, sum(s.shots_fired) as shots_fired, sum(s.shots_landed) as shots_landed, s.best_weapon, sum(s.best_weapon_kills) as best_weapon_kills, sum(s.melee_kills) as melee_kills, sum(s.assassinations) as assassinations
+            from halo5_season_stats s
+            left outer join halo5_seasons sea on s.season = sea.content_id
+            where s.member_id = %s and sea.is_active = 1 and sea.ranked = 1
+            group by s.member_id
+        """,[user])
         db.close()
+
+        highest_rank = get_rank_text(records[0]['highest_csr'])
         
         # handle div by 0 situations
         if records[0]['games_completed'] > 0 :
@@ -141,7 +215,7 @@ def halo5_season_stats (command,channel,user,season = None) :
         response = """
 Current Season Stats For """ + records[0]['gamertag'] + """: 
 *SPARTAN RANK:* """ + str(records[0]['rank']) + """
-*HIGHEST CSR:* """ + str(records[0]['highest_csr']) + """
+*HIGHEST CSR:* """ + highest_rank + """
 *GAMES:* """ + str(records[0]['games_completed']) + win_pct + """
 *K/D:* """ + kd + """ 
 *ACCURACY:* """ + accuracy
