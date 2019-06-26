@@ -41,7 +41,7 @@ try:
     print("config loaded \n")
 
 except:
-    print ("Error reading the config file")
+    print ("Error reading the config file - main file")
 
 AT_BOT = "<@" + BOT_ID + ">"
 EXAMPLE_COMMAND = "do"

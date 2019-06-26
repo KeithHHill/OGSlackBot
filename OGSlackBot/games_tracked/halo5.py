@@ -25,7 +25,7 @@ try :
     
 
 except:
-    print ("Error reading the config file")
+    print ("Error reading the config file - halo 5")
 
 player_emblem_url = 'https://www.haloapi.com/profile/h5/profiles/diknak/emblem'
 headers = {'Accept-Language': 'en', 'Ocp-Apim-Subscription-Key' : api_key}
@@ -87,16 +87,30 @@ def get_rank_text(rank_value) :
             return "n/a"
 
 
+def user_plays_halo5(user) :
+    db = database.Database()
+    results = db.fetchAll("""select * from player_games where game_id ="HALO5" and member_id =%s """,[user])
+    if len(results) == 0 :
+        return False
+    else :
+        return True
+    db.close()
+
 ### primary entry point
 def handle_command (command,channel,user) :
-    if "season" in command and "stats" in command :
-        if bot_utilities.has_gamertag(user) :
-            halo5_season_stats(command,channel,user)
-        else :
-            bot_utilities.post_to_channel(channel,"Sorry, but I don't have a gamertag registered.  Try the \"Update gamertag\" command")
+    if user_plays_halo5(user) is False :
+        bot_utilities.post_to_channel(channel,"I don't have a record of you playing halo 5.  Try the command '@og_bot I play halo 5' to get started")
 
     else :
-        bot_utilities.post_to_channel(channel,"Sorry, but that command isn't supported  Try using the command '@og_bot help halo' to see what I can do.")
+
+        if "stats" in command :
+            if bot_utilities.has_gamertag(user) :
+                halo5_season_stats(command,channel,user)
+            else :
+                bot_utilities.post_to_channel(channel,"Sorry, but I don't have a gamertag registered.  Try the \"Update gamertag\" command")
+
+        else :
+            bot_utilities.post_to_channel(channel,"Sorry, but that command isn't supported  Try using the command '@og_bot help halo' to see what I can do.")
         
 
 
@@ -118,16 +132,15 @@ def halo5_user_stats (command,channel,user) :
 
 # passed a user and call the halo 5 API to update stats.  Return True if successful
 def update_season_stats(user, season = None) :
-    season_url = "/stats/h5/servicerecords/arena?players={gamertag}&%s"
+    season_url = "/stats/h5/servicerecords/arena?&%s"
     user_gamertag = bot_utilities.get_gamertag(user)
-    user_gamertag_enc = str.replace(str(user_gamertag)," ","+") # handle spaces in the gamertag
-    season_url = season_url.format(gamertag=user_gamertag_enc)
+    
 
-
-    # fetch the data from the API
+    # gamertag to the parameters
     if season == None :
         params = urllib.urlencode({
         # Request parameters
+        'players' : user_gamertag
         })
 
     try: #everything in a try so we can bail if something goes wrong
@@ -220,6 +233,7 @@ Current Season Stats For """ + records[0]['gamertag'] + """:
 *K/D:* """ + kd + """ 
 *ACCURACY:* """ + accuracy
 
+        bot_utilities.log_event("Halo 5 stats retrieved by user " + user)
 
     else :
         if bot_utilities.has_gamertag :

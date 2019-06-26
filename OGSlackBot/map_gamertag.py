@@ -16,7 +16,7 @@ try:
     conv_timeout_min = int(config.get('config','conv_timeout_min'))
 
 except:
-    print ("Error reading the config file")
+    print ("Error reading the config file - map gamertag")
 
 
 

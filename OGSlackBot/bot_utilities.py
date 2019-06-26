@@ -30,7 +30,7 @@ try:
     
 
 except:
-    print ("Error reading the config file")
+    print ("Error reading the config file - bot utilities")
 
 slack_client = SlackClient(token)
 

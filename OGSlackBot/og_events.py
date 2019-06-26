@@ -26,7 +26,7 @@ try:
 
 
 except:
-    print ("Error reading the config file")
+    print ("Error reading the config file - events")
 
 slack_client = SlackClient(token)
 
