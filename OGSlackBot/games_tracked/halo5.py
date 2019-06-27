@@ -9,6 +9,8 @@ import requests
 import httplib, urllib, base64
 import database
 import json
+from dateutil import parser
+import time
 
 # get config
 myPath = os.path.dirname(os.path.abspath(__file__))
@@ -22,6 +24,8 @@ try :
     halo5_channel = config.get('halo5','channel')
     stat_days = config.get('halo5','stat_days')
     api_key = config.get('halo5','api_key')
+    past_matches = config.get('halo5','past_matches')
+
     
 
 except:
@@ -30,6 +34,170 @@ except:
 player_emblem_url = 'https://www.haloapi.com/profile/h5/profiles/diknak/emblem'
 headers = {'Accept-Language': 'en', 'Ocp-Apim-Subscription-Key' : api_key}
 
+
+
+# determines if the user has registered with the game
+def user_plays_halo5(user) :
+    db = database.Database()
+    results = db.fetchAll("""select * from player_games where game_id ="HALO5" and member_id =%s """,[user])
+    if len(results) == 0 :
+        return False
+    else :
+        return True
+    db.close()
+
+### primary entry point
+def handle_command (command,channel,user) :
+    if user_plays_halo5(user) is False :
+        bot_utilities.post_to_channel(channel,"I don't have a record of you playing halo 5.  Try the command '@og_bot I play halo 5' to get started")
+
+    else :
+
+        if "stats" in command and ("ranked" in command or "season" in command) :
+            halo5_season_stats(command,channel,user)
+
+        
+        elif "stats" in command and ("unranked" in command or "arena" in command) :
+                halo5_arena_stats(command,channel,user)
+            
+        elif "stats" in command :
+            if bot_utilities.has_gamertag(user) :
+                halo5_season_stats(command,channel,user)
+            else :
+                bot_utilities.post_to_channel(channel,"Sorry, but I don't have a gamertag registered.  Try the \"Update gamertag\" command")
+
+        else : # user mentions halo 5 but command not recognized
+            bot_utilities.post_to_channel(channel,"Sorry, but that command isn't supported  Try using the command '@og_bot help halo' to see what I can do.")
+
+
+# pulls in match history for a user with an optional specified type.  Returns True if it was successful
+def update_match_history(user,matchType = None) :
+    gamertag = bot_utilities.get_gamertag(user)
+
+    gamertagEnc = urllib.quote(gamertag)
+    if matchType not in['arena','warzone','campaign','custom','customlocal'] : #ensure passed parameter is valid
+        matchType = None
+
+    matchesToRetrieve = int(past_matches)
+    matchesRetrieved = 0
+
+    while matchesToRetrieve > 0 : # we are limited to 25 matches per response, so we need to loop our request
+
+        try :
+            params = urllib.urlencode({
+                'modes' : matchType,
+                'count' : matchesToRetrieve,
+                'start' : matchesRetrieved,
+                'include-times': 'True'
+            })
+
+
+
+            conn = httplib.HTTPSConnection('www.haloapi.com')
+            conn.request("GET", "/stats/h5/players/" +gamertagEnc +"/matches?%s" % params, "{body}", headers)
+            response = conn.getresponse()
+            data = json.loads(response.read())
+            db = database.Database()
+
+            if data['ResultCount'] > 0 :
+                matches = data['Results']
+                for match in matches : # go through each match and write to the database
+                    MatchId=match['Id']['MatchId']
+                    GameMode = match['Id']['GameMode']
+                    SeasonId = match['SeasonId']
+                    MatchCompletedDate = match['MatchCompletedDate']['ISO8601Date']
+                    MapId = match['MapId']
+                    GameBaseVariantId = match['GameBaseVariantId']
+
+                    MatchCompletedDate = parser.parse(MatchCompletedDate) #get the datetime from the unicode format into the parser
+                    MatchCompletedDate = str(MatchCompletedDate.strftime("%Y-%m-%d %H:%M:%S")) #put the parsed date time into a string format to allow it to be inserted into the database
+
+                    db.execute("""replace into halo5_player_matches (member_id,MatchId,GameMode,gamertag,SeasonId,MatchCompletedDate,MapId,GameBaseVariantId,updated) values(%s,%s,%s,%s,%s,%s,%s,%s,now())""",[user,MatchId,GameMode,gamertag,SeasonId,MatchCompletedDate,MapId,GameBaseVariantId])
+
+            conn.close()
+            db.close()
+        
+            
+            matchesRetrieved = matchesRetrieved + data['ResultCount']
+            matchesToRetrieve = matchesToRetrieve - data['ResultCount']
+            if data['ResultCount'] == 0 :  # for some reason we didn't get any results, so we need to break our loop
+                matchesToRetrieve = 0
+
+
+        except :
+            bot_utilities.log_event("attempted to get match history for " + gamertag + " and failed")
+            return False
+    return True
+
+# given a match id, update the match stats
+def update_match_results(matchId,user) :
+    # check and see if the match record already exists in the database
+    db = database.Database()
+    data = db.fetchAll("select * from halo5_match_results where MatchId = %s and member_id = %s",[matchId,user])
+    db.close()
+    if len(data) > 0 : # we already have the results for this user, leave the function
+        return
+
+
+    params = urllib.urlencode({
+    })
+
+    try:
+        time.sleep(2)
+        conn = httplib.HTTPSConnection('www.haloapi.com')
+        conn.request("GET", "/stats/h5/arena/matches/" + matchId + "?%s" % params, "{body}", headers)
+        response = conn.getresponse()
+        data = json.loads(response.read())
+        conn.close()
+
+        # find gamertag
+        gamertag = bot_utilities.get_gamertag(user)
+
+        # find player record within the payload
+        players = data['PlayerStats']
+        teams = data['TeamStats']
+        playerNumber = -1
+        teamNumber = -1
+        count = 0
+        for player in players :
+            if str(player['Player']['Gamertag']).lower() == gamertag :
+                playerNumber = count
+                break
+            else :
+                count += 1
+
+        if playerNumber > -1 : #ensures we found our player in the payload
+            # find team number
+            for team in teams :
+                if data['PlayerStats'][playerNumber]['TeamId'] == team['TeamId'] :
+                    teamNumber = team['TeamId']
+
+            SeasonId = data['SeasonId']
+            PlaylistId = data['PlaylistId']
+            TotalKills = data['PlayerStats'][playerNumber]['TotalKills']
+            TotalDeaths = data['PlayerStats'][playerNumber]['TotalDeaths']
+            TotalAssists = data['PlayerStats'][playerNumber]['TotalAssists']
+            TotalShotsFired = data['PlayerStats'][playerNumber]['TotalShotsFired']
+            TotalShotsLanded = data['PlayerStats'][playerNumber]['TotalShotsLanded']
+            TotalMeleeKills = data['PlayerStats'][playerNumber]['TotalMeleeKills']
+            TeamId = data['PlayerStats'][playerNumber]['TeamId']
+            PlayerScore = data['PlayerStats'][playerNumber]['PlayerScore']
+            if data['TeamStats'][teamNumber]['Rank'] == 1 :  # determine if the player was on the winning team
+                TeamWin = True
+            else :
+                TeamWin = False
+            
+            # write to the database
+            db = database.Database()
+            db.execute("""
+            replace into halo5_match_results (MatchId,member_id,SeasonId,TotalKills,TotalDeaths,TotalAssists,TotalShotsFired,TotalShotsLanded,TotalMeleeKills,TeamId,PlayerScore,TeamWin,updated)
+            values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
+            """,[matchId,user,SeasonId,TotalKills,TotalDeaths,TotalAssists,TotalShotsFired,TotalShotsLanded,TotalMeleeKills,TeamId,PlayerScore,TeamWin])
+            db.close()
+
+
+    except :
+        bot_utilities.log_event("failed to retrieve match results for " + matchId)
 
 # updates the database with the current playlist information
 def update_seasons() :
@@ -86,32 +254,6 @@ def get_rank_text(rank_value) :
         except :
             return "n/a"
 
-
-def user_plays_halo5(user) :
-    db = database.Database()
-    results = db.fetchAll("""select * from player_games where game_id ="HALO5" and member_id =%s """,[user])
-    if len(results) == 0 :
-        return False
-    else :
-        return True
-    db.close()
-
-### primary entry point
-def handle_command (command,channel,user) :
-    if user_plays_halo5(user) is False :
-        bot_utilities.post_to_channel(channel,"I don't have a record of you playing halo 5.  Try the command '@og_bot I play halo 5' to get started")
-
-    else :
-
-        if "stats" in command :
-            if bot_utilities.has_gamertag(user) :
-                halo5_season_stats(command,channel,user)
-            else :
-                bot_utilities.post_to_channel(channel,"Sorry, but I don't have a gamertag registered.  Try the \"Update gamertag\" command")
-
-        else :
-            bot_utilities.post_to_channel(channel,"Sorry, but that command isn't supported  Try using the command '@og_bot help halo' to see what I can do.")
-        
 
 
 def halo5_user_registered (command, channel, user) :   
@@ -188,10 +330,9 @@ def update_season_stats(user, season = None) :
         return False
 
 
-    
 
 # updates the stats for the user in the database
-# returns the stats for the player for a given season.  Current season is the default
+# returns the stats for the player for a given season.  Current season is the default.  Only shows ranked stats
 
 def halo5_season_stats (command,channel,user,season = None) :
     success = update_season_stats(user,season)
@@ -242,3 +383,61 @@ Current Season Stats For """ + records[0]['gamertag'] + """:
             response = "It looks like you don't have a gamertag registered.  Try using the 'update gamertag' command."
 
     bot_utilities.post_to_channel(channel,response)
+
+
+# will pull in the last x number of matches and show stats
+def halo5_arena_stats (command, channel, user) :
+    bot_utilities.post_to_channel(channel, "Fetching stats. This could take a minute.")
+
+    # fetch the match history for the user.  This does not contain the match details
+    update_match_history(user,"arena")
+    
+    db = database.Database()
+    matches = db.fetchAll("""select * from halo5_player_matches where GameMode =1 and member_id = %s order by MatchCompletedDate desc limit %s""",[user,int(past_matches)] )
+    
+
+    # fetch the details for the found matches
+    for match in matches :
+        update_match_results(match['MatchId'],user)
+        
+
+    # fetch the results
+    try: 
+        results = db.fetchAll("""
+        select member_id, count(*) as MatchesCompleted, sum(TotalKills) as TotalKills, sum(TotalDeaths) as TotalDeaths, 
+        round(sum(TotalKills) / sum(TotalDeaths),2) as kd,
+        sum(TotalAssists) as TotalAssists, sum(TotalShotsFired) as TotalShotsFired, sum(TotalShotsLanded) as TotalShotsLanded,
+        round(sum(TotalShotsLanded) / sum(TotalShotsFired) * 100,2) as accuracy,
+        sum(TotalMeleeKills) as TotalMeleeKills, round(sum(PlayerScore) / count(*),0) as AveragePlayerScore,
+        round(sum(TeamWin) / count(*) * 100,2) as WinPercentage
+        from (
+        select member_id, MatchId,TotalKills, TotalDeaths,TotalAssists, TotalShotsFired, TotalShotsLanded,TotalMeleeKills,PlayerScore,TeamWin,MatchCompletedDate
+        from halo5_player_match_vw
+        where member_id = %s
+        order by MatchCompletedDate desc
+        limit %s
+        ) as sub
+        where member_id = %s
+        """,[user,int(past_matches), user])
+        db.close()
+        stats = results[0]
+        
+        gamertag = bot_utilities.get_gamertag(user)
+        response ="""
+Arena stats for """ + gamertag + """ (past """ + past_matches + """ matches): 
+*K/D:* """ + str(stats['kd']) + """ (""" + str(stats['TotalKills']) + """ kills) 
+*Accuracy:* """ + str(stats['accuracy']) + """%
+*Win Percentage:* """ + str(stats['WinPercentage']) + """%
+*Average Player Score:* """ + str(stats['AveragePlayerScore'])
+
+        log_response = "Retrieved Halo 5 Arena stats for user " + user
+    
+    except :
+        response = "There was an error in fetching your results :("
+        log_response = "failed when retrieving arena stats for user " + user
+
+    
+
+    bot_utilities.post_to_channel(channel,response)
+    bot_utilities.log_event(log_response)
+    
