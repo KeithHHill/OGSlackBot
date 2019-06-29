@@ -236,6 +236,7 @@ _______\n
         response = """I have custom functionality for Halo. Use one of these commands\n
 _______\n
 *HALO 5 SEASON STATS*- I will pull in the stats for the current season\n
+*HALO 5 ARENA STATS*- I will pull in the stats for your last several arena matches\n
         """
 
     elif command.startswith('help') :

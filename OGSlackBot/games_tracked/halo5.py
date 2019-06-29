@@ -62,7 +62,7 @@ def handle_command (command,channel,user) :
             
         elif "stats" in command :
             if bot_utilities.has_gamertag(user) :
-                halo5_season_stats(command,channel,user)
+                halo5_arena_stats(command,channel,user)
             else :
                 bot_utilities.post_to_channel(channel,"Sorry, but I don't have a gamertag registered.  Try the \"Update gamertag\" command")
 
@@ -323,7 +323,7 @@ def update_season_stats(user, season = None) :
                 )
 
                 db.close()
-            return True
+        return True
 
     except :
         bot_utilities.log_event("something went wrong when writing halo 5 season stats for gamertag " + user_gamertag)
@@ -347,6 +347,7 @@ def halo5_season_stats (command,channel,user,season = None) :
         """,[user])
         db.close()
 
+        # get the highest rank for the season
         highest_rank = get_rank_text(records[0]['highest_csr'])
         
         # handle div by 0 situations
@@ -388,9 +389,11 @@ Current Season Stats For """ + records[0]['gamertag'] + """:
 # will pull in the last x number of matches and show stats
 def halo5_arena_stats (command, channel, user) :
     bot_utilities.post_to_channel(channel, "Fetching stats. This could take a minute.")
+    bot_utilities.log_event("Fetching arena stats for "+ user)
 
     # fetch the match history for the user.  This does not contain the match details
-    update_match_history(user,"arena")
+    success = update_match_history(user,"arena")
+
     
     db = database.Database()
     matches = db.fetchAll("""select * from halo5_player_matches where GameMode =1 and member_id = %s order by MatchCompletedDate desc limit %s""",[user,int(past_matches)] )
@@ -424,7 +427,7 @@ def halo5_arena_stats (command, channel, user) :
         
         gamertag = bot_utilities.get_gamertag(user)
         response ="""
-Arena stats for """ + gamertag + """ (past """ + past_matches + """ matches): 
+Arena stats for """ + gamertag + """ (past """ + str(stats['MatchesCompleted']) + """ matches): 
 *K/D:* """ + str(stats['kd']) + """ (""" + str(stats['TotalKills']) + """ kills) 
 *Accuracy:* """ + str(stats['accuracy']) + """%
 *Win Percentage:* """ + str(stats['WinPercentage']) + """%
