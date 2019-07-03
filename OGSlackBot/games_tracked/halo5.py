@@ -266,10 +266,6 @@ def halo5_user_registered (command, channel, user) :
         return None
 
 
-# user asks about their halo 5 stats.  Return time based stats on config
-def halo5_user_stats (command,channel,user) :
-    print ("x")
-
 
 
 # passed a user and call the halo 5 API to update stats.  Return True if successful
@@ -339,7 +335,7 @@ def halo5_season_stats (command,channel,user,season = None) :
     if success :
         db = database.Database()
         records = db.fetchAll("""
-            select s.member_id, s.gamertag, max(s.rank) as rank, max(s.highest_csr) as highest_csr, sum(s.total_kills) as total_kills, sum(s.total_deaths) as total_deaths, sum(s.total_assists) as total_assists, sum(s.games_completed) as games_completed, sum(s.games_won) as games_won, sum(s.games_lost) as games_lost, sum(s.shots_fired) as shots_fired, sum(s.shots_landed) as shots_landed, s.best_weapon, sum(s.best_weapon_kills) as best_weapon_kills, sum(s.melee_kills) as melee_kills, sum(s.assassinations) as assassinations
+            select s.member_id, s.gamertag, max(s.rank) as rank, max(s.highest_csr) as highest_csr, sum(s.total_kills) as total_kills, sum(s.total_deaths) as total_deaths, sum(s.total_assists) as total_assists, sum(s.games_completed) as games_completed, sum(s.games_won) as games_won, sum(s.games_lost) as games_lost, sum(s.shots_fired) as shots_fired, sum(s.shots_landed) as shots_landed, s.best_weapon, sum(s.best_weapon_kills) as best_weapon_kills, sum(s.melee_kills) as melee_kills, sum(s.assassinations) as assassinations, round((sum(s.total_kills) + sum(s.total_assists)) / sum(s.total_deaths),2) as kda
             from halo5_season_stats s
             left outer join halo5_seasons sea on s.season = sea.content_id
             where s.member_id = %s and sea.is_active = 1 and sea.ranked = 1
@@ -372,7 +368,7 @@ Current Season Stats For """ + records[0]['gamertag'] + """:
 *SPARTAN RANK:* """ + str(records[0]['rank']) + """
 *HIGHEST CSR:* """ + highest_rank + """
 *GAMES:* """ + str(records[0]['games_completed']) + win_pct + """
-*K/D:* """ + kd + """ 
+*KDA:* """ + str(records[0]['kda']) + """ 
 *ACCURACY:* """ + accuracy
 
         bot_utilities.log_event("Halo 5 stats retrieved by user " + user)
@@ -412,7 +408,8 @@ def halo5_arena_stats (command, channel, user) :
         sum(TotalAssists) as TotalAssists, sum(TotalShotsFired) as TotalShotsFired, sum(TotalShotsLanded) as TotalShotsLanded,
         round(sum(TotalShotsLanded) / sum(TotalShotsFired) * 100,2) as accuracy,
         sum(TotalMeleeKills) as TotalMeleeKills, round(sum(PlayerScore) / count(*),0) as AveragePlayerScore,
-        round(sum(TeamWin) / count(*) * 100,2) as WinPercentage
+        round(sum(TeamWin) / count(*) * 100,2) as WinPercentage,
+        round((sum(TotalKills) + sum(TotalAssists)) / sum(TotalDeaths),2) as kda
         from (
         select member_id, MatchId,TotalKills, TotalDeaths,TotalAssists, TotalShotsFired, TotalShotsLanded,TotalMeleeKills,PlayerScore,TeamWin,MatchCompletedDate
         from halo5_player_match_vw
@@ -428,7 +425,7 @@ def halo5_arena_stats (command, channel, user) :
         gamertag = bot_utilities.get_gamertag(user)
         response ="""
 Arena stats for """ + gamertag + """ (past """ + str(stats['MatchesCompleted']) + """ matches): 
-*K/D:* """ + str(stats['kd']) + """ (""" + str(stats['TotalKills']) + """ kills) 
+*KDA:* """ + str(stats['kda']) + """ (""" + str(stats['TotalKills']) + """ kills) 
 *Accuracy:* """ + str(stats['accuracy']) + """%
 *Win Percentage:* """ + str(stats['WinPercentage']) + """%
 *Average Player Score:* """ + str(stats['AveragePlayerScore'])
