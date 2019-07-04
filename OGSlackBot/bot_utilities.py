@@ -35,6 +35,16 @@ except:
 slack_client = SlackClient(token)
 
 
+# returns true if the user plays the indicated game
+def user_plays_game(user,game) :
+    db = database.Database()
+    results = db.fetchAll("""select * from player_games where game_id =%s and member_id =%s """,[str.upper(game),user])
+    if len(results) == 0 :
+        return False
+    else :
+        return True
+    db.close()
+
 
 # determines if the user has a mapped gamertag.  If not, returns False. 
 def has_gamertag (user) :

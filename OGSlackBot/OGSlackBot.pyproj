@@ -34,6 +34,9 @@
     <Compile Include="games_tracked\anthem.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="games_tracked\apex.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="games_tracked\halo5.py">
       <SubType>Code</SubType>
     </Compile>

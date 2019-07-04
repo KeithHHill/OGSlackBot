@@ -18,6 +18,7 @@ import game_info
 import games
 import map_gamertag
 from games_tracked import halo5
+from games_tracked import apex
 
 
 # get config
@@ -229,6 +230,7 @@ _______\n
         response = """I have custom functionality for games. Use one of these commands\n
 _______\n
 *I PLAY HALO 5*- I will start pulling data for Halo 5\n
+*I PLAY APEX* - I can get your Apex Legends stats\n
 *UPDATE GAMERTAG*- Tell me when you change your gamertag\n
         """
 
@@ -327,7 +329,10 @@ _______\n
         deffered = True
         halo5.handle_command(command,channel,user)
 
-    
+    elif command.startswith("apex") :
+        deffered = True
+        apex.handle_command(command,channel,user)
+        
         
 
 

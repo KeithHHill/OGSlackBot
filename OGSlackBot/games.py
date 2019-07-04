@@ -22,12 +22,17 @@ def is_valid_game(game_name):
 
     game_name = string.replace(game_name," ","")
     db.close()
+
     # go through each game and see if it matches (remove spaces and make lower)
     for game in games :
-        item = string.replace(game["game_name"]," ","") 
-        item = string.lower(item)
-        if game_name == item :
-            return True, game["game_id"]
+        search_terms = str(game['search_terms'])
+        terms = list(search_terms.split(","))
+        
+        for term in terms :
+            item = string.replace(term," ","") 
+            item = string.lower(item)
+            if game_name == item :
+                return True, game["game_id"]
 
     return False, "NONE" 
 
@@ -38,7 +43,7 @@ def game_add_request (command, channel, user) :
 
     # remove the base "I play"
     game_name = string.replace(command,"i play ","")
-
+    
     # verify orientation has been completed
     completed_orientation = bot_utilities.orientation_completed(user)
     if completed_orientation == False :
@@ -66,6 +71,9 @@ def game_add_request (command, channel, user) :
             anthem.anthem_user_registered(command,channel,user)
         
         elif game_id == "HALO5" :
+            halo5.halo5_user_registered(command,channel,user)
+        
+        elif game_id == "APEX" :
             halo5.halo5_user_registered(command,channel,user)
 
 
