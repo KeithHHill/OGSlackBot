@@ -7,6 +7,7 @@ import bot_utilities
 import og_events
 import game_info
 from games_tracked import halo5
+import mixer
 
 # get config
 myPath = os.path.dirname(os.path.abspath(__file__))
@@ -39,3 +40,6 @@ if __name__ == "__main__":
 
         elif arguments[0] == "update halo 5 playlists" :
             halo5.update_seasons()
+
+        elif arguments[0] == "update_mixer" :
+            mixer.find_new_streamers()

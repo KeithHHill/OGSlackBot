@@ -204,6 +204,14 @@ def handle_command(command, channel, user,command_orig):
     if command.startswith('hi') or command.startswith('hello'):
         response = "well hello there Guardian"
         
+    elif command.startswith('help mixer') :
+        response = """
+You can register your mixer name with me and once you go online, I'll let the chat know.  To get started, use the command:
+
+@og_bot register mixer: [name]
+
+Your mixer name must be as it appears in the URL on your mixer channel.
+        """
     
     elif command.startswith('help events') : 
         response = """
@@ -248,6 +256,7 @@ _______\n
         @og_bot help games : I'll tell you some info about games.
         @og_bot help tracked : I'll tell you about games I can track for you that you play 
         @og_bot help halo : I'll tell you about Halo specific functions
+        @og_bot help mixer: I'll tell you how I integrate with mixer
     
     """
         # test the system
@@ -338,9 +347,6 @@ _______\n
         deffered = True
         mixer.register_mixer(command,channel,user)
 
-    elif command.startswith("xxx") :
-        deffered = True
-        mixer.update_online_streamers()
         
         
 
