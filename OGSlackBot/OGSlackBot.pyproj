@@ -52,6 +52,9 @@
     <Compile Include="map_gamertag.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="mixer.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="og_events.py">
       <SubType>Code</SubType>
     </Compile>

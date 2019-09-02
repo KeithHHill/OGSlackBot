@@ -19,6 +19,7 @@ import games
 import map_gamertag
 from games_tracked import halo5
 from games_tracked import apex
+import mixer
 
 
 # get config
@@ -332,6 +333,14 @@ _______\n
     elif command.startswith("apex") :
         deffered = True
         apex.handle_command(command,channel,user)
+
+    elif command.startswith("register mixer:") :
+        deffered = True
+        mixer.register_mixer(command,channel,user)
+
+    elif command.startswith("xxx") :
+        deffered = True
+        mixer.update_online_streamers()
         
         
 
